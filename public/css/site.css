@@ -1,34 +1,75 @@
 body {
-  font-family: 'Helvetica Neue', Verdana, Helvetica, Arial, sans-serif;
-  max-width: 600px;
-  margin: 0 auto;
-  padding-top: 72px;
-  -webkit-font-smoothing: antialiased;
-  font-size: 1.125em;
-  color: #333;
-  line-height: 1.5em;
+    font-family: Verdana, sans-serif;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding-top: 18px;
+    -webkit-font-smoothing: antialiased;
+    color: #333;
+    height: calc(100vh - 18px);
 }
 
-h1, h2, h3 {
-  color: #000;
-}
-h1 {
-  font-size: 2.5em
+div#app {
+    height: 100%;
 }
 
-h2 {
-  font-size: 2em
+div#cal {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 
-h3 {
-  font-size: 1.5em
+div#control {
+    width: 100%;
+    display: flex;
+    align-items: center;
 }
 
-a {
-  text-decoration: none;
-  color: #09f;
+div#control > p {
+    text-wrap: nowrap;
 }
 
-a:hover {
-  text-decoration: underline;
+div#control > input {
+    flex-grow: 1;
+}
+
+div#table {
+    flex-grow: 1;
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    border-top: solid 2px #333;
+    border-bottom: solid 2px #333;
+    margin: 1em 0;
+    text-align: right;
+}
+
+div#table > .td {
+    border-bottom: solid 1px #333;
+    padding: 0.2em 0;
+}
+
+.td.weekend {
+    color: rgba(51, 51, 51, 0.4);
+}
+
+div#table > .th {
+    font-weight: bold;
+}
+
+p.daynum {
+    margin: 0;
+}
+
+ul.events {
+    margin: 0;
+    padding: 0;
+    list-style-type: none;
+    font-size: 0.85em;
+}
+
+ul.events > li {
+    width: 98%;
+    padding: 1%;
+    text-wrap: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
