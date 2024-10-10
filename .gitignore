@@ -1,3 +1,6 @@
+/.cpcache
+/.shadow-cljs
+/node_modules
 /target
 /classes
 /checkouts
