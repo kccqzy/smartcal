@@ -48,12 +48,12 @@
   ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"])
 
 (defn day-component
-  [{:keys [y m d]}]
+  [{:keys [y m d]} show-complete]
   [:div.td
    [:p.daynum
-    (str (if (= 1 d) (str (get month-names m) " "))
+    (str (if (or show-complete (= 1 d)) (str (get month-names m) " "))
          d
-         (if (and (= 1 d) (= 0 m)) (str ", " y)))]
+         (if (or show-complete (and (= 1 d) (= 0 m))) (str ", " y)))]
    [:ul.events
     ;; Currently only bank holidays
     (cond (and (= m 0) (= d 1)) [:li "New Year's Day"]
@@ -90,7 +90,7 @@
       (doall (for [x (range (* 7 @weeks-to-show))]
                (let [date (decompose-js-date
                             (into-js-date (update-in start [:d] #(+ x %))))]
-                 ^{:key (to-key date)} [day-component date]))))]])
+                 ^{:key (to-key date)} [day-component date (= x 0)]))))]])
 
 (defn home-page [] [calendar-component])
 
