@@ -38,8 +38,9 @@
   [occurrence day-of-week m y]
   (let [day-1 (into-js-date {:y y, :m m, :d 1})
         first-occurrence-day (+ 1 (mod (- day-of-week (.getDay day-1)) 7))
-        all-occurrences-days (take-while #(= m (.getMonth (into-js-date {:y y :m m :d %})))
-                                         (iterate #(+ 7 %) first-occurrence-day))]
+        all-occurrences-days
+          (take-while #(= m (.getMonth (into-js-date {:y y, :m m, :d %})))
+                      (iterate #(+ 7 %) first-occurrence-day))]
     (if (>= occurrence 0)
       (nth all-occurrences-days occurrence)
       (nth (reverse all-occurrences-days) (- -1 occurrence)))))
@@ -64,13 +65,15 @@
             [:li "Martin Luther King Jr. Day"]
           (and (= m 1) (= d (nd-weekday-of-month 2 1 m y))) [:li
                                                              "Presidents' Day"]
-          (and (= m 4) (= d (nd-weekday-of-month -1 1 m y))) [:li "Memorial Day"]
+          (and (= m 4) (= d (nd-weekday-of-month -1 1 m y))) [:li
+                                                              "Memorial Day"]
           (and (= m 5) (= d 19)) [:li "Juneteenth"]
           (and (= m 6) (= d 4)) [:li "Independence Day"]
           (and (= m 8) (= d (nd-weekday-of-month 0 1 m y))) [:li "Labor Day"]
           (and (= m 9) (= d (nd-weekday-of-month 1 1 m y))) [:li "Columbus Day"]
           (and (= m 10) (= d 11)) [:li "Veterans Day"]
-          (and (= m 10) (= d (nd-weekday-of-month 3 4 m y))) [:li "Thanksgiving Day"]
+          (and (= m 10) (= d (nd-weekday-of-month 3 4 m y)))
+            [:li "Thanksgiving Day"]
           (and (= m 11) (= d 25)) [:li "Christmas Day"])]])
 
 (defn calendar-component
