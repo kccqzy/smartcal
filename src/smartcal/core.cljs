@@ -1,13 +1,19 @@
 (ns smartcal.core
   (:require [reagent.core :as r]
-            [reagent.dom :as dom]))
+            [reagent.dom :as dom]
+            [instaparse.core :as insta :refer [defparser]]))
 
 ;; -------------------------
-;; Model
+;; State
 
 (def weeks-to-show (r/atom 5))
 
 (def start-date (r/atom {:y 2025, :m 0, :d 1}))
+
+(def cmdline-input (r/atom ""))
+
+;; -------------------------
+;; Functions
 
 (defn into-js-date [{:keys [y m d]}] (js/Date. y m d))
 
@@ -46,7 +52,23 @@
       (nth (reverse all-occurrences-days) (- -1 occurrence)))))
 
 ;; -------------------------
-;; Views
+;; Control language
+
+(defparser
+  cmdline-parser
+  "cmd = ws? (help-cmd | add-cmd | display-cmd | next-cmd | prev-cmd) ws?
+   ws = #' +'
+   help-cmd = 'help' (ws help-topic)?
+   help-topic = 'add' | 'display' | 'next' | 'prev'
+   add-cmd = 'add' (ws 'event')? ws str-lit
+   str-lit = '\"'  #'[^\"]*' '\"'
+   display-cmd = 'display'
+   next-cmd = ('next' | 'n') (ws #'[0-9]+')?
+   prev-cmd = ('prev' | 'p') (ws #'[0-9]+')?
+  ")
+
+;; -------------------------
+;; Components
 
 (def month-names
   ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"])
@@ -76,6 +98,44 @@
             [:li "Thanksgiving Day"]
           (and (= m 11) (= d 25)) [:li "Christmas Day"])]])
 
+(def cmdline-prompt ">>> ")
+
+(def cmdline-prompt-length (.-length cmdline-prompt))
+
+(defn cmdline-display-component
+  [[production-kw & remaining]]
+  (into [:span {:class (name production-kw)}]
+        (map #(cond (string? %) [:span %]
+                    (vector? %) [cmdline-display-component %])
+          remaining)))
+
+(defn cmdline-component
+  []
+  [:div#cmdline
+   [:textarea#cmdline-in.cmdline
+    {:spell-check "false",
+     :value (str cmdline-prompt @cmdline-input),
+     :on-change (fn [ev]
+                  (let [val (-> ev
+                                .-target
+                                .-value)]
+                    (swap! cmdline-input
+                      #(cond (.startsWith val cmdline-prompt)
+                               (.substring val cmdline-prompt-length)
+                             (< (.-length val) cmdline-prompt-length)
+                               (clojure.string/replace val #"[> ]" "")
+                             :else %))))}]
+   (let [parsed (cmdline-parser @cmdline-input :total true)
+         did-fail (insta/failure? parsed)]
+     (js/console.log (pr-str parsed))
+     [:pre#cmdline-disp.cmdline
+      {:aria-hidden "true",
+       :style {:background-color (if (empty? @cmdline-input)
+                                   "transparent"
+                                   (if did-fail "#fcaca8" "#c2f3a2"))}}
+      [:code cmdline-prompt
+       (if (seq parsed) [cmdline-display-component parsed])]])])
+
 (defn calendar-component
   []
   [:div#cal [:h1 "Simple Calendar"]
@@ -102,7 +162,8 @@
       (doall (for [x (range (* 7 @weeks-to-show))]
                (let [date (decompose-js-date
                             (into-js-date (update-in start [:d] #(+ x %))))]
-                 ^{:key (to-key date)} [day-component date (= x 0)]))))]])
+                 ^{:key (to-key date)} [day-component date (= x 0)]))))]
+   [cmdline-component]])
 
 (defn home-page [] [calendar-component])
 

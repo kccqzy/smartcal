@@ -35,6 +35,7 @@ div#control > input {
 div#table {
     flex-grow: 1;
     display: grid;
+    overflow-y: auto;
     grid-template-columns: repeat(7, 1fr);
     border-top: solid 2px #333;
     border-bottom: solid 2px #333;
@@ -72,4 +73,49 @@ ul.events > li {
     text-wrap: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+div#cmdline {
+    margin: 0 0 1.2rem 0;
+    padding: 0;
+    position: relative;
+    border-radius: 5px;
+    box-shadow: 0px 0px 8px #333;
+}
+
+div#cmdline > .cmdline {
+    display: block;
+    font-family: monospace;
+    margin: 0;
+    padding: 10px;
+    border: 0;
+    width: calc(100% - 20px);
+    font-size: 0.8rem;
+    line-height: 1rem;
+    white-space: normal;
+    word-break: break-all;
+}
+
+#cmdline-in {
+    color: transparent;
+    background: transparent;
+    caret-color: #333;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    resize: none;
+}
+
+#cmdline-disp {
+    background-clip: padding-box;
+}
+
+#cmdline-disp span.failure {
+    color: #d00;
+}
+
+#cmdline-disp span.add-cmd > span:first-child {
+    color: #0086b3;
 }
