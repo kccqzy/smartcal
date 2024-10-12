@@ -61,11 +61,18 @@
    help-cmd = 'help' (ws help-topic)?
    help-topic = 'add' | 'display' | 'next' | 'prev'
    add-cmd = 'add' (ws 'event')? ws str-lit
+   display-cmd = 'display' ws 'week' ws int-lit
+   next-cmd = ('next' | 'n') (ws int-lit)?
+   prev-cmd = ('prev' | 'p') (ws int-lit)?
    str-lit = '\"'  #'[^\"]*' '\"'
-   display-cmd = 'display'
-   next-cmd = ('next' | 'n') (ws #'[0-9]+')?
-   prev-cmd = ('prev' | 'p') (ws #'[0-9]+')?
+   int-lit = #'[0-9]+'
   ")
+
+(defn remove-ws
+  [parsed]
+  (if (vector? parsed)
+    (if (= :ws (first parsed)) nil (filter some? (map remove-ws parsed)))
+    parsed))
 
 ;; -------------------------
 ;; Components
@@ -111,30 +118,71 @@
 
 (defn cmdline-component
   []
-  [:div#cmdline
-   [:textarea#cmdline-in.cmdline
-    {:spell-check "false",
-     :value (str cmdline-prompt @cmdline-input),
-     :on-change (fn [ev]
-                  (let [val (-> ev
-                                .-target
-                                .-value)]
-                    (swap! cmdline-input
-                      #(cond (.startsWith val cmdline-prompt)
-                               (.substring val cmdline-prompt-length)
-                             (< (.-length val) cmdline-prompt-length)
-                               (clojure.string/replace val #"[> ]" "")
-                             :else %))))}]
-   (let [parsed (cmdline-parser @cmdline-input :total true)
-         did-fail (insta/failure? parsed)]
-     (js/console.log (pr-str parsed))
-     [:pre#cmdline-disp.cmdline
-      {:aria-hidden "true",
-       :style {:background-color (if (empty? @cmdline-input)
-                                   "transparent"
-                                   (if did-fail "#fcaca8" "#c2f3a2"))}}
-      [:code cmdline-prompt
-       (if (seq parsed) [cmdline-display-component parsed])]])])
+  (let [textarea-ref (atom nil)]
+    (fn []
+      [:div#cmdline
+       [:textarea#cmdline-in.cmdline
+        {:ref #(reset! textarea-ref %),
+         :spell-check "false",
+         :value (str cmdline-prompt @cmdline-input),
+         :on-change (fn [ev]
+                      (let [val (-> ev
+                                    .-target
+                                    .-value)]
+                        ;; The handling of the prompt is somewhat ad-hoc
+                        ;; and arbitrary. Basically the <textarea> element
+                        ;; doesn't have a way to restrict editing to some
+                        ;; portion of it. So the prompt is included.
+                        (cond
+                          ;; The user keeps the prompt and appends to it.
+                          ;; Happy case.
+                          (.startsWith val cmdline-prompt)
+                            (reset! cmdline-input (.substring
+                                                    val
+                                                    cmdline-prompt-length))
+                          ;; The user tries to insert at the beginning.
+                          (.endsWith val cmdline-prompt)
+                            (do (reset! cmdline-input
+                                  (.slice val 0 (- 0 cmdline-prompt-length)))
+                                (when-let [el @textarea-ref]
+                                  (let [end (+ (.-length cmdline-input)
+                                               cmdline-prompt-length)]
+                                    (.setSelectionRange el end end))))
+                          ;; The user somehow removed the prompt and
+                          ;; replaced it with something short (hopefully
+                          ;; just a few characters).
+                          (< (.-length val) cmdline-prompt-length)
+                            (do (reset! cmdline-input
+                                  (clojure.string/replace val #"[> ]" ""))
+                                (when-let [el @textarea-ref]
+                                  (let [end (+ (.-length cmdline-input)
+                                               cmdline-prompt-length)]
+                                    (.setSelectionRange el end end))))))),
+         :on-select (fn [ev]
+                      (let [start (-> ev
+                                      .-target
+                                      .-selectionStart)
+                            end (-> ev
+                                    .-target
+                                    .-selectionEnd)]
+                        (when-let [el @textarea-ref]
+                          (.setSelectionRange el
+                                              (max start cmdline-prompt-length)
+                                              (max end
+                                                   cmdline-prompt-length)))))}]
+       (let [parsed (cmdline-parser @cmdline-input :total true)
+             did-fail (insta/failure? parsed)]
+         (js/console.log (pr-str parsed))
+         [:pre#cmdline-disp.cmdline
+          {:aria-hidden "true",
+           :style {:background-color (if (empty? @cmdline-input)
+                                       "transparent"
+                                       (if did-fail "#fcaca8" "#c2f3a2"))}}
+          [:code cmdline-prompt
+           (if (seq parsed) [cmdline-display-component parsed])
+           (if-not (empty? @cmdline-input)
+             [:span.comment " # "
+              (if did-fail "Parse error" (pr-str (remove-ws parsed)))])]])])))
 
 (defn calendar-component
   []

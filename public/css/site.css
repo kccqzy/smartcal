@@ -92,6 +92,7 @@ div#cmdline > .cmdline {
     width: calc(100% - 20px);
     font-size: 0.8rem;
     line-height: 1rem;
+    /* We just want to simulate the terminal behavior where words can break at any location. But this apparently breaks multiple consecutive spaces. */
     white-space: normal;
     word-break: break-all;
 }
@@ -114,6 +115,10 @@ div#cmdline > .cmdline {
 
 #cmdline-disp span.failure {
     color: #d00;
+}
+
+#cmdline-disp span.comment {
+    opacity: 0.3;
 }
 
 #cmdline-disp span.add-cmd > span:first-child {
