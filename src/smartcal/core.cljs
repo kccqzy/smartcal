@@ -172,12 +172,10 @@
                                                    cmdline-prompt-length)))))}]
        (let [parsed (cmdline-parser @cmdline-input :total true)
              did-fail (insta/failure? parsed)]
-         (js/console.log (pr-str parsed))
          [:pre#cmdline-disp.cmdline
           {:aria-hidden "true",
-           :style {:background-color (if (empty? @cmdline-input)
-                                       "transparent"
-                                       (if did-fail "#fcaca8" "#c2f3a2"))}}
+           :class
+             (if (empty? @cmdline-input) "" (if did-fail "failed" "succeeded"))}
           [:code cmdline-prompt
            (if (seq parsed) [cmdline-display-component parsed])
            (if-not (empty? @cmdline-input)
@@ -186,7 +184,7 @@
 
 (defn calendar-component
   []
-  [:div#cal [:h1 "Simple Calendar"]
+  [:div#cal
    [:div#control [:p "Weeks to display: "]
     [:input
      {:type "range",
