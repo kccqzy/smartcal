@@ -1,16 +1,8 @@
 (ns smartcal.core
   (:require [reagent.core :as r]
             [reagent.dom :as dom]
-            [instaparse.core :as insta :refer [defparser]]))
-
-;; -------------------------
-;; State
-
-(def weeks-to-show (r/atom 5))
-
-(def start-date (r/atom {:y 2025, :m 0, :d 1}))
-
-(def cmdline-input (r/atom ""))
+            [instaparse.core :as insta :refer [defparser]]
+            [cljs.core.match :refer [match]]))
 
 ;; -------------------------
 ;; Functions
@@ -33,12 +25,11 @@
     (decompose-js-date (into-js-date (update-in start-ymd [:d] #(- % day))))))
 
 (defn next-week
-  [ymd]
-  (decompose-js-date (into-js-date (update-in ymd [:d] #(+ % 7)))))
+  ([ymd] (next-week 1 ymd))
+  ([n ymd]
+   (decompose-js-date (into-js-date (update-in ymd [:d] #(+ % (* n 7)))))))
 
-(defn prev-week
-  [ymd]
-  (decompose-js-date (into-js-date (update-in ymd [:d] #(- % 7)))))
+(defn prev-week ([ymd] (next-week -1 ymd)) ([n ymd] (next-week (- n) ymd)))
 
 (defn nd-weekday-of-month
   [occurrence day-of-week m y]
@@ -52,27 +43,29 @@
       (nth (reverse all-occurrences-days) (- -1 occurrence)))))
 
 ;; -------------------------
+;; State
+
+(def weeks-to-show (r/atom 5))
+
+(def start-date (r/atom (decompose-js-date (js/Date.))))
+
+(def cmdline-input (r/atom ""))
+
+;; -------------------------
 ;; Control language
 
 (defparser
   cmdline-parser
   "cmd = ws? (help-cmd | add-cmd | display-cmd | next-cmd | prev-cmd) ws?
-   ws = #' +'
-   help-cmd = 'help' (ws help-topic)?
-   help-topic = 'add' | 'display' | 'next' | 'prev'
-   add-cmd = 'add' (ws 'event')? ws str-lit
+   <ws> = #' +'
+   help-cmd = <'help'>
+   add-cmd = <'add' (ws 'event')? ws> str-lit
    display-cmd = 'display' ws 'week' ws int-lit
-   next-cmd = ('next' | 'n') (ws int-lit)?
-   prev-cmd = ('prev' | 'p') (ws int-lit)?
-   str-lit = '\"'  #'[^\"]*' '\"'
-   int-lit = #'[0-9]+'
+   next-cmd = <('next' | 'n')> (<ws> int-lit)?
+   prev-cmd = <('prev' | 'p')> (<ws> int-lit)?
+   <str-lit> = <'\"'>  #'[^\"]*' <'\"'>
+   <int-lit> = #'[0-9]+'
   ")
-
-(defn remove-ws
-  [parsed]
-  (if (vector? parsed)
-    (if (= :ws (first parsed)) nil (filter some? (map remove-ws parsed)))
-    parsed))
 
 ;; -------------------------
 ;; Components
@@ -116,6 +109,20 @@
                     (vector? %) [cmdline-display-component %])
           remaining)))
 
+(defn execute-input
+  [input]
+  (let [parsed (cmdline-parser input)]
+    (if (insta/failure? parsed)
+      (js/window.alert (pr-str parsed))
+      (match parsed
+        [:cmd [:next-cmd]] (swap! start-date next-week)
+        [:cmd [:next-cmd n]] (swap! start-date #(next-week (js/parseInt n 10)
+                                                           %))
+        [:cmd [:prev-cmd]] (swap! start-date prev-week)
+        [:cmd [:prev-cmd n]] (swap! start-date #(prev-week (js/parseInt n 10)
+                                                           %))
+        :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
+
 (defn cmdline-component
   []
   (let [textarea-ref (atom nil)]
@@ -126,9 +133,14 @@
          :spell-check "false",
          :value (str cmdline-prompt @cmdline-input),
          :on-change (fn [ev]
+                      ;; We do not support tab characters for now. The
+                      ;; browser is supposed to interpret the tab character
+                      ;; as focusing on the next input and should not
+                      ;; result in any real tab characters.
                       (let [val (-> ev
                                     .-target
-                                    .-value)]
+                                    .-value
+                                    (.replaceAll "\t" ""))]
                         ;; The handling of the prompt is somewhat ad-hoc
                         ;; and arbitrary. Basically the <textarea> element
                         ;; doesn't have a way to restrict editing to some
@@ -137,13 +149,17 @@
                           ;; The user keeps the prompt and appends to it.
                           ;; Happy case.
                           (.startsWith val cmdline-prompt)
-                            (reset! cmdline-input (.substring
-                                                    val
-                                                    cmdline-prompt-length))
+                            (let [input (.substring val cmdline-prompt-length)]
+                              (if (> (.indexOf input "\n") -1)
+                                (do (reset! cmdline-input "")
+                                    (execute-input (.replaceAll input "\n" "")))
+                                (reset! cmdline-input input)))
                           ;; The user tries to insert at the beginning.
                           (.endsWith val cmdline-prompt)
                             (do (reset! cmdline-input
-                                  (.slice val 0 (- 0 cmdline-prompt-length)))
+                                  (-> val
+                                      (.slice 0 (- 0 cmdline-prompt-length))
+                                      (.replaceAll "\n" "")))
                                 (when-let [el @textarea-ref]
                                   (let [end (+ (.-length cmdline-input)
                                                cmdline-prompt-length)]
@@ -152,8 +168,11 @@
                           ;; replaced it with something short (hopefully
                           ;; just a few characters).
                           (< (.-length val) cmdline-prompt-length)
-                            (do (reset! cmdline-input
-                                  (clojure.string/replace val #"[> ]" ""))
+                            (do (reset! cmdline-input (-> val
+                                                          (.replaceAll ">" "")
+                                                          (.replaceAll " " "")
+                                                          (.replaceAll "\n"
+                                                                       "")))
                                 (when-let [el @textarea-ref]
                                   (let [end (+ (.-length cmdline-input)
                                                cmdline-prompt-length)]
@@ -170,7 +189,7 @@
                                               (max start cmdline-prompt-length)
                                               (max end
                                                    cmdline-prompt-length)))))}]
-       (let [parsed (cmdline-parser @cmdline-input :total true)
+       (let [parsed (cmdline-parser @cmdline-input :total true :unhide :all)
              did-fail (insta/failure? parsed)]
          [:pre#cmdline-disp.cmdline
           {:aria-hidden "true",
@@ -180,7 +199,9 @@
            (if (seq parsed) [cmdline-display-component parsed])
            (if-not (empty? @cmdline-input)
              [:span.comment " # "
-              (if did-fail "Parse error" (pr-str (remove-ws parsed)))])]])])))
+              (if did-fail
+                "Parse error"
+                (pr-str (cmdline-parser @cmdline-input)))])]])])))
 
 (defn calendar-component
   []
@@ -194,11 +215,6 @@
       :on-change (fn [e]
                    (let [new-value (js/parseInt (.. e -target -value))]
                      (reset! weeks-to-show new-value)))}] [:p @weeks-to-show]]
-   [:div#obsolete
-    [:input
-     {:type "button", :value "Prev", :on-click #(swap! start-date prev-week)}]
-    [:input
-     {:type "button", :value "Next", :on-click #(swap! start-date next-week)}]]
    [:div#table
     {:style {:grid-template-rows
                (str "30px repeat(" @weeks-to-show ", minmax(5rem, 1fr))")}}
