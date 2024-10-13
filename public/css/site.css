@@ -75,12 +75,15 @@ ul.events > li {
     text-overflow: ellipsis;
 }
 
-div#cmdline {
+#cmdline-inout {
     margin: 0 0 1.2rem 0;
     padding: 0;
-    position: relative;
     border-radius: 5px;
     box-shadow: 0px 0px 8px #333;
+}
+
+div#cmdline {
+    position: relative;
 }
 
 div#cmdline > .cmdline {
@@ -98,10 +101,17 @@ div#cmdline > .cmdline {
     word-break: break-all;
 }
 
+#cmdline-out {
+    padding: 0 10px;
+    max-height: 6em;
+    overflow-y: auto;
+    color: #657b83;
+}
+
 #cmdline-in {
     color: transparent;
     background: transparent;
-    caret-color: #333;
+    caret-color: #586e75;
     position: absolute;
     top: 0;
     bottom: 0;
@@ -112,8 +122,7 @@ div#cmdline > .cmdline {
 
 #cmdline-disp {
     background-clip: padding-box;
-    /* background-color: #fdf6e3; */
-    color: #657b83;
+    color: #586e75;
 }
 
 #cmdline-disp span.failure {

@@ -51,18 +51,21 @@
 
 (def cmdline-input (r/atom ""))
 
+(def cmdline-output (r/atom ""))
+
 ;; -------------------------
 ;; Control language
 
 (defparser
   cmdline-parser
-  "cmd = ws? (help-cmd | add-cmd | display-cmd | next-cmd | prev-cmd) ws?
+  "cmd = <ws?> (help-cmd | add-cmd | display-cmd | next-cmd | prev-cmd | today-cmd) <ws?>
    <ws> = #' +'
    help-cmd = <'help'>
    add-cmd = <'add' (ws 'event')? ws> str-lit
    display-cmd = 'display' ws 'week' ws int-lit
    next-cmd = <('next' | 'n')> (<ws> int-lit)?
    prev-cmd = <('prev' | 'p')> (<ws> int-lit)?
+   today-cmd = <'today'>
    <str-lit> = <'\"'>  #'[^\"]*' <'\"'>
    <int-lit> = #'[0-9]+'
   ")
@@ -111,9 +114,10 @@
 
 (defn execute-input
   [input]
+  (reset! cmdline-output "")
   (let [parsed (cmdline-parser input)]
     (if (insta/failure? parsed)
-      (js/window.alert (pr-str parsed))
+      (reset! cmdline-output (pr-str parsed))
       (match parsed
         [:cmd [:next-cmd]] (swap! start-date next-week)
         [:cmd [:next-cmd n]] (swap! start-date #(next-week (js/parseInt n 10)
@@ -121,6 +125,7 @@
         [:cmd [:prev-cmd]] (swap! start-date prev-week)
         [:cmd [:prev-cmd n]] (swap! start-date #(prev-week (js/parseInt n 10)
                                                            %))
+        [:cmd [:today-cmd]] (reset! start-date (decompose-js-date (js/Date.)))
         :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
 
 (defn cmdline-component
@@ -203,6 +208,11 @@
                 "Parse error"
                 (pr-str (cmdline-parser @cmdline-input)))])]])])))
 
+(defn cmdline-output-component
+  []
+  [:div#cmdline-out
+   (let [o @cmdline-output] (if (seq o) [:pre [:code (.trimEnd o)]]))])
+
 (defn calendar-component
   []
   [:div#cal
@@ -225,7 +235,7 @@
                (let [date (decompose-js-date
                             (into-js-date (update-in start [:d] #(+ x %))))]
                  ^{:key (to-key date)} [day-component date (= x 0)]))))]
-   [cmdline-component]])
+   [:div#cmdline-inout [cmdline-output-component] [cmdline-component]]])
 
 (defn home-page [] [calendar-component])
 
