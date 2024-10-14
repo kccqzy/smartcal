@@ -58,7 +58,7 @@
 
 (defparser
   cmdline-parser
-  "cmd = <ws?> (help-cmd | add-cmd | display-cmd | next-cmd | prev-cmd | today-cmd) <ws?>
+  "cmd = <ws?> (help-cmd | add-cmd | display-cmd | next-cmd | prev-cmd | today-cmd | goto-cmd) <ws?>
    <ws> = #' +'
    help-cmd = <'help'>
    add-cmd = <'add' (ws 'event')? ws> str-lit
@@ -66,15 +66,32 @@
    next-cmd = <('next' | 'n')> (<ws> int-lit)?
    prev-cmd = <('prev' | 'p')> (<ws> int-lit)?
    today-cmd = <'today'>
+   goto-cmd = <'goto' ws> date-lit
    <str-lit> = <'\"'>  #'[^\"]*' <'\"'>
    <int-lit> = #'[0-9]+'
+   date-lit = yyyy-lit mm-lit dd-lit | yyyy-lit <'-'> mm-lit <'-'> dd-lit | yyyy-lit <ws> mm-lit <ws> dd-lit | mmm-lit <ws> d-lit <','? ws> yyyy-lit | d-lit <ws> mmm-lit <','? ws> yyyy-lit
+   yyyy-lit = #'19[0-9][0-9]|20[0-9][0-9]'
+   mm-lit = #'0[1-9]|1[0-2]'
+   dd-lit = #'0[1-9]|1[0-9]|2[0-9]|3[01]'
+   d-lit = #'0?[1-9]' | #'1[0-9]|2[0-9]|3[01]'
+   mmm-lit = 'Jan' | 'Feb' | 'Mar' | 'Apr' | 'May' | 'Jun' | 'Jul' | 'Aug' | 'Sep' | 'Oct' | 'Nov' | 'Dec'
   ")
-
-;; -------------------------
-;; Components
 
 (def month-names
   ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"])
+
+(defn transform-parsed-dates
+  [parsed]
+  (insta/transform {:yyyy-lit (comp #(assoc nil :y %) #(js/parseInt % 10)),
+                    :mm-lit (comp #(assoc nil :m %) dec #(js/parseInt % 10)),
+                    :dd-lit (comp #(assoc nil :d %) #(js/parseInt % 10)),
+                    :d-lit (comp #(assoc nil :d %) #(js/parseInt % 10)),
+                    :mmm-lit #(assoc nil :m (.indexOf month-names %)),
+                    :date-lit conj}
+                   parsed))
+
+;; -------------------------
+;; Components
 
 (defn day-component
   [{:keys [y m d]} show-complete]
@@ -115,7 +132,7 @@
 (defn execute-input
   [input]
   (reset! cmdline-output "")
-  (let [parsed (cmdline-parser input)]
+  (let [parsed (transform-parsed-dates (cmdline-parser input))]
     (if (insta/failure? parsed)
       (reset! cmdline-output (pr-str parsed))
       (match parsed
@@ -126,6 +143,7 @@
         [:cmd [:prev-cmd n]] (swap! start-date #(prev-week (js/parseInt n 10)
                                                            %))
         [:cmd [:today-cmd]] (reset! start-date (decompose-js-date (js/Date.)))
+        [:cmd [:goto-cmd ymd]] (reset! start-date ymd)
         :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
 
 (defn cmdline-component
@@ -206,7 +224,8 @@
              [:span.comment " # "
               (if did-fail
                 "Parse error"
-                (pr-str (cmdline-parser @cmdline-input)))])]])])))
+                (pr-str (transform-parsed-dates (cmdline-parser
+                                                  @cmdline-input))))])]])])))
 
 (defn cmdline-output-component
   []

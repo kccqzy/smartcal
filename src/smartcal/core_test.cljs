@@ -1,5 +1,6 @@
 (ns smartcal.core-test
   (:require [cljs.test :refer (deftest is)]
+            [instaparse.core :as insta]
             [smartcal.core :as c]))
 
 (deftest actual-start
@@ -20,11 +21,39 @@
   (is (= (c/nd-weekday-of-month 2 2 9 2024) 15))
   (is (= (c/nd-weekday-of-month 3 2 9 2024) 22))
   (is (= (c/nd-weekday-of-month 4 2 9 2024) 29))
-  (is (thrown? js/Error (c/nd-weekday-of-month 5 2 9 2024)) "occurrence out of bounds")
+  (is (thrown? js/Error (c/nd-weekday-of-month 5 2 9 2024))
+      "occurrence out of bounds")
   (is (= (c/nd-weekday-of-month 4 9 9 2024) 29))
   (is (= (c/nd-weekday-of-month -1 2 9 2024) 29))
   (is (= (c/nd-weekday-of-month -2 2 9 2024) 22))
   (is (= (c/nd-weekday-of-month -3 2 9 2024) 15))
   (is (= (c/nd-weekday-of-month -4 2 9 2024) 8))
   (is (= (c/nd-weekday-of-month -5 2 9 2024) 1))
-  (is (thrown? js/Error (c/nd-weekday-of-month -6 2 9 2024)) "negative occurrence out of bounds"))
+  (is (thrown? js/Error (c/nd-weekday-of-month -6 2 9 2024))
+      "negative occurrence out of bounds"))
+
+(deftest control-language
+  (is (= (insta/parses c/cmdline-parser "goto 20241001")
+         [[:cmd
+           [:goto-cmd
+            [:date-lit [:yyyy-lit "2024"] [:mm-lit "10"] [:dd-lit "01"]]]]]))
+  (is (= (insta/parses c/cmdline-parser "goto 2024-10-01")
+         [[:cmd
+           [:goto-cmd
+            [:date-lit [:yyyy-lit "2024"] [:mm-lit "10"] [:dd-lit "01"]]]]]))
+  (is (= (insta/parses c/cmdline-parser "goto 2024  10       01")
+         [[:cmd
+           [:goto-cmd
+            [:date-lit [:yyyy-lit "2024"] [:mm-lit "10"] [:dd-lit "01"]]]]]))
+  (is (= (insta/parses c/cmdline-parser "goto Oct 1, 2024")
+         [[:cmd
+           [:goto-cmd
+            [:date-lit [:mmm-lit "Oct"] [:d-lit "1"] [:yyyy-lit "2024"]]]]]))
+  (is (= (insta/parses c/cmdline-parser "goto Oct 12, 2024")
+         [[:cmd
+           [:goto-cmd
+            [:date-lit [:mmm-lit "Oct"] [:d-lit "12"] [:yyyy-lit "2024"]]]]]))
+  (is (= (insta/parses c/cmdline-parser "goto 01 Oct 2024")
+         [[:cmd
+           [:goto-cmd
+            [:date-lit [:d-lit "01"] [:mmm-lit "Oct"] [:yyyy-lit "2024"]]]]])))
