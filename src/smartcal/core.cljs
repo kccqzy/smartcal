@@ -146,6 +146,20 @@
         [:cmd [:goto-cmd ymd]] (reset! start-date ymd)
         :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
 
+(defn explain-input-component
+  [input]
+  (let [parsed (transform-parsed-dates (cmdline-parser input))]
+    (if-not (insta/failure? parsed)
+      (match parsed
+        [:cmd [:next-cmd]] "Scroll down by one week"
+        [:cmd [:next-cmd n]] (str "Scroll down by " n " weeks")
+        [:cmd [:prev-cmd]] "Scroll up by one week"
+        [:cmd [:prev-cmd n]] (str "Scroll up by " n " weeks")
+        [:cmd [:today-cmd]] "Scroll to today"
+        [:cmd [:goto-cmd {:y y, :m m, :d d}]]
+          (str "Go to date " (get month-names m) " " d ", " y)
+        :else (pr-str parsed)))))
+
 (defn cmdline-component
   []
   (let [textarea-ref (atom nil)]
@@ -212,20 +226,19 @@
                                               (max start cmdline-prompt-length)
                                               (max end
                                                    cmdline-prompt-length)))))}]
-       (let [parsed (cmdline-parser @cmdline-input :total true :unhide :all)
+       (let [input @cmdline-input
+             parsed (cmdline-parser input :total true :unhide :all)
              did-fail (insta/failure? parsed)]
          [:pre#cmdline-disp.cmdline
           {:aria-hidden "true",
-           :class
-             (if (empty? @cmdline-input) "" (if did-fail "failed" "succeeded"))}
+           :class (if (empty? input) "" (if did-fail "failed" "succeeded"))}
           [:code cmdline-prompt
            (if (seq parsed) [cmdline-display-component parsed])
-           (if-not (empty? @cmdline-input)
+           (if-not (empty? input)
              [:span.comment " # "
               (if did-fail
-                "Parse error"
-                (pr-str (transform-parsed-dates (cmdline-parser
-                                                  @cmdline-input))))])]])])))
+                "Parse Error"
+                [explain-input-component input])])]])])))
 
 (defn cmdline-output-component
   []
