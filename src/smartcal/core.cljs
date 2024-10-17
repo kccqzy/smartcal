@@ -45,13 +45,20 @@
 ;; -------------------------
 ;; State
 
-(def weeks-to-show (r/atom 5))
+(def initial-app-state {:weeks-to-show 5
+                        :start-date (decompose-js-date (js/Date.))
+                        :cmdline-input ""
+                        :cmdline-output ""})
 
-(def start-date (r/atom (decompose-js-date (js/Date.))))
+(def app-state (r/atom initial-app-state))
 
-(def cmdline-input (r/atom ""))
+(def weeks-to-show (r/cursor app-state [:weeks-to-show]))
 
-(def cmdline-output (r/atom ""))
+(def start-date (r/cursor app-state [:start-date]))
+
+(def cmdline-input (r/cursor app-state [:cmdline-input]))
+
+(def cmdline-output (r/cursor app-state [:cmdline-output]))
 
 ;; -------------------------
 ;; Control language
