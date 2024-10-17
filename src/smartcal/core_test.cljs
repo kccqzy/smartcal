@@ -32,6 +32,22 @@
   (is (thrown? js/Error (c/nd-weekday-of-month -6 2 9 2024))
       "negative occurrence out of bounds"))
 
+(deftest load-state
+  (is (= (c/load-state {}) {}))
+  (is (= (c/load-state {:weeks-to-show 1}) {:weeks-to-show 1}))
+  (is (= (c/load-state {:weeks-to-show -1}) {}))
+  (is (= (c/load-state {:weeks-to-show 2, :start-date nil}) {:weeks-to-show 2}))
+  (is (= (c/load-state {:weeks-to-show 2, :start-date {:xx 8}})
+         {:weeks-to-show 2}))
+  (is (= (c/load-state {:weeks-to-show 2, :start-date {:y 1999}})
+         {:weeks-to-show 2}))
+  (is (= (c/load-state {:weeks-to-show 2, :start-date {:y 1999, :m 9, :d 9}})
+         {:weeks-to-show 2, :start-date {:y 1999, :m 9, :d 9}}))
+  (is (= (c/load-state {:weeks-to-show 2, :start-date {:y 1, :m 1, :d 1}})
+         {:weeks-to-show 2}))
+  (is (= (c/load-state {:weeks-to-show 2, :start-date {:y 1999, :m 12, :d 1}})
+         {:weeks-to-show 2})))
+
 (deftest control-language
   (is (= (insta/parses c/cmdline-parser "goto 20241001")
          [[:cmd

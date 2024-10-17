@@ -4,6 +4,8 @@
             [instaparse.core :as insta :refer [defparser]]
             [cljs.core.match :refer [match]]))
 
+(goog-define VERBOSE false)
+
 ;; -------------------------
 ;; Functions
 
@@ -45,20 +47,55 @@
 ;; -------------------------
 ;; State
 
-(def initial-app-state {:weeks-to-show 5
-                        :start-date (decompose-js-date (js/Date.))
-                        :cmdline-input ""
-                        :cmdline-output ""})
+(def initial-app-state
+  {:weeks-to-show 5, :start-date (decompose-js-date (js/Date.))})
 
-(def app-state (r/atom initial-app-state))
+(def app-state-validators
+  {:weeks-to-show #(and (integer? %) (>= % 1) (<= % 12)),
+   :start-date #(and (:y %)
+                     (:m %)
+                     (:d %)
+                     (>= (:y %) 1900)
+                     (< (:y %) 2100)
+                     (= % (decompose-js-date (into-js-date %))))})
+
+(defn load-state
+  [reloaded-edn]
+  (into {}
+        (filter #(if-let [validator (get app-state-validators (first %))]
+                   (validator (second %))
+                   false)
+          reloaded-edn)))
+
+(defn reload-from-local-storage
+  []
+  (try (js->clj (js/JSON.parse (.getItem js/window.localStorage "appstate"))
+                :keywordize-keys
+                true)
+       (catch :default e
+         (do (when VERBOSE (println "Reloading from localStorage failed"))
+             {}))))
+
+(def app-state (r/atom (merge initial-app-state (reload-from-local-storage))))
+
+(defn save-to-local-storage
+  []
+  (when VERBOSE (println "Saving to localStorage:" @app-state))
+  (try (.setItem js/window.localStorage
+                 "appstate"
+                 (js/JSON.stringify (clj->js @app-state)))
+       (catch :default e
+         (when VERBOSE (println "Saving to localStorage failed")))))
+
+(def saver (r/track! save-to-local-storage))
 
 (def weeks-to-show (r/cursor app-state [:weeks-to-show]))
 
 (def start-date (r/cursor app-state [:start-date]))
 
-(def cmdline-input (r/cursor app-state [:cmdline-input]))
+(def cmdline-input (r/atom ""))
 
-(def cmdline-output (r/cursor app-state [:cmdline-output]))
+(def cmdline-output (r/atom ""))
 
 ;; -------------------------
 ;; Control language
