@@ -206,83 +206,86 @@
 
 (defn cmdline-component
   []
-  (let [textarea-ref (atom nil)]
-    (fn []
-      [:div#cmdline
-       [:textarea#cmdline-in.cmdline
-        {:ref #(reset! textarea-ref %),
-         :spell-check "false",
-         :value (str cmdline-prompt @cmdline-input),
-         :on-change (fn [ev]
-                      ;; We do not support tab characters for now. The
-                      ;; browser is supposed to interpret the tab character
-                      ;; as focusing on the next input and should not
-                      ;; result in any real tab characters.
-                      (let [val (-> ev
-                                    .-target
-                                    .-value
-                                    (.replaceAll "\t" ""))]
-                        ;; The handling of the prompt is somewhat ad-hoc
-                        ;; and arbitrary. Basically the <textarea> element
-                        ;; doesn't have a way to restrict editing to some
-                        ;; portion of it. So the prompt is included.
-                        (cond
-                          ;; The user keeps the prompt and appends to it.
-                          ;; Happy case.
-                          (.startsWith val cmdline-prompt)
-                            (let [input (.substring val cmdline-prompt-length)]
-                              (if (> (.indexOf input "\n") -1)
-                                (do (reset! cmdline-input "")
-                                    (execute-input (.replaceAll input "\n" "")))
-                                (reset! cmdline-input input)))
-                          ;; The user tries to insert at the beginning.
-                          (.endsWith val cmdline-prompt)
-                            (do (reset! cmdline-input
-                                  (-> val
-                                      (.slice 0 (- 0 cmdline-prompt-length))
-                                      (.replaceAll "\n" "")))
-                                (when-let [el @textarea-ref]
-                                  (let [end (+ (.-length cmdline-input)
-                                               cmdline-prompt-length)]
-                                    (.setSelectionRange el end end))))
-                          ;; The user somehow removed the prompt and
-                          ;; replaced it with something short (hopefully
-                          ;; just a few characters).
-                          (< (.-length val) cmdline-prompt-length)
-                            (do (reset! cmdline-input (-> val
-                                                          (.replaceAll ">" "")
-                                                          (.replaceAll " " "")
-                                                          (.replaceAll "\n"
-                                                                       "")))
-                                (when-let [el @textarea-ref]
-                                  (let [end (+ (.-length cmdline-input)
-                                               cmdline-prompt-length)]
-                                    (.setSelectionRange el end end))))))),
-         :on-select (fn [ev]
-                      (let [start (-> ev
-                                      .-target
-                                      .-selectionStart)
-                            end (-> ev
-                                    .-target
-                                    .-selectionEnd)]
-                        (when-let [el @textarea-ref]
-                          (.setSelectionRange el
-                                              (max start cmdline-prompt-length)
-                                              (max end
-                                                   cmdline-prompt-length)))))}]
-       (let [input @cmdline-input
-             parsed (cmdline-parser input :total true :unhide :all)
-             did-fail (insta/failure? parsed)]
-         [:pre#cmdline-disp.cmdline
-          {:aria-hidden "true",
-           :class (if (empty? input) "" (if did-fail "failed" "succeeded"))}
-          [:code cmdline-prompt
-           (if (seq parsed) [cmdline-display-component parsed])
-           (if-not (empty? input)
-             [:span.comment " # "
-              (if did-fail
-                "Parse Error"
-                [explain-input-component input])])]])])))
+  (let [textarea-ref (atom nil)
+        textarea-change
+          (fn [ev]
+            ;; We do not support tab characters for now. The
+            ;; browser is supposed to interpret the tab character
+            ;; as focusing on the next input and should not
+            ;; result in any real tab characters.
+            (let [val (-> ev
+                          .-target
+                          .-value
+                          (.replaceAll "\t" ""))]
+              ;; The handling of the prompt is somewhat ad-hoc
+              ;; and arbitrary. Basically the <textarea> element
+              ;; doesn't have a way to restrict editing to some
+              ;; portion of it. So the prompt is included.
+              (cond
+                ;; The user keeps the prompt and appends to it. Happy
+                ;; case.
+                (.startsWith val cmdline-prompt)
+                  (let [input (.substring val cmdline-prompt-length)]
+                    (if (> (.indexOf input "\n") -1)
+                      (do (reset! cmdline-input "")
+                          (execute-input (.replaceAll input "\n" "")))
+                      (reset! cmdline-input input)))
+                ;; The user tries to insert at the beginning.
+                (.endsWith val cmdline-prompt)
+                  (do (reset! cmdline-input (-> val
+                                                (.slice
+                                                  0
+                                                  (- 0 cmdline-prompt-length))
+                                                (.replaceAll "\n" "")))
+                      (when-let [el @textarea-ref]
+                        (let [end (+ (.-length cmdline-input)
+                                     cmdline-prompt-length)]
+                          (.setSelectionRange el end end))))
+                ;; The user somehow removed the prompt and
+                ;; replaced it with something short (hopefully
+                ;; just a few characters).
+                (< (.-length val) cmdline-prompt-length)
+                  (do (reset! cmdline-input (-> val
+                                                (.replaceAll ">" "")
+                                                (.replaceAll " " "")
+                                                (.replaceAll "\n" "")))
+                      (when-let [el @textarea-ref]
+                        (let [end (+ (.-length cmdline-input)
+                                     cmdline-prompt-length)]
+                          (.setSelectionRange el end end)))))))
+        textarea-select (fn [ev]
+                          (let [start (-> ev
+                                          .-target
+                                          .-selectionStart)
+                                end (-> ev
+                                        .-target
+                                        .-selectionEnd)]
+                            (when-let [el @textarea-ref]
+                              (.setSelectionRange
+                                el
+                                (max start cmdline-prompt-length)
+                                (max end cmdline-prompt-length)))))]
+    (fn [] [:div#cmdline
+            [:textarea#cmdline-in.cmdline
+             {:ref #(reset! textarea-ref %),
+              :spell-check "false",
+              :value (str cmdline-prompt @cmdline-input),
+              :on-change textarea-change,
+              :on-select textarea-select}]
+            (let [input @cmdline-input
+                  parsed (cmdline-parser input :total true :unhide :all)
+                  did-fail (insta/failure? parsed)]
+              [:pre#cmdline-disp.cmdline
+               {:aria-hidden "true",
+                :class
+                  (if (empty? input) "" (if did-fail "failed" "succeeded"))}
+               [:code cmdline-prompt
+                (if (seq parsed) [cmdline-display-component parsed])
+                (if-not (empty? input)
+                  [:span.comment " # "
+                   (if did-fail
+                     "Parse Error"
+                     [explain-input-component input])])]])])))
 
 (defn cmdline-output-component
   []
