@@ -129,11 +129,25 @@
 
 (defn prev-week ([ymd] (next-week -1 ymd)) ([n ymd] (next-week (- n) ymd)))
 
+(defn modulo-remainder-seq
+  "Returns a sequence of integers in a range where it is congruent to a specified value modulo another specified value."
+  ([divisor val from]
+   (let [remainder (mod val divisor)
+         from-remainder (mod from divisor)
+         first-selected (+ from (mod (- remainder from-remainder) divisor))]
+     (iterate #(+ divisor %) first-selected)))
+  ([divisor val from to]
+   (take-while #(< % to) (modulo-remainder-seq divisor val from))))
+
+(defn soonest-day-of-week
+  "Return the daynum for the given day of week that is the soonest on or after the specified start date."
+  [start dow]
+  (+ (:daynum start) (mod (- dow (:weekday start)) 7)))
+
 (defn nd-weekday-of-month
   [occurrence day-of-week m y]
   (let [day-1 (ymd-to-date y m 1)
-        first-occurrence-day-num (+ (:daynum day-1)
-                                    (mod (- day-of-week (:weekday day-1)) 7))
+        first-occurrence-day-num (soonest-day-of-week day-1 day-of-week)
         all-occurrences-days-num (take-while
                                    #(= m (:m (day-num-to-date %)))
                                    (iterate #(+ 7 %) first-occurrence-day-num))]
@@ -141,6 +155,31 @@
                            (nth all-occurrences-days-num occurrence)
                            (nth (reverse all-occurrences-days-num)
                                 (- -1 occurrence)))))))
+
+(defn recurrent-event-occurrences
+  [recur-pat default-recur-start query-start query-end]
+  (let [recur-start (get recur-pat :recur-start default-recur-start)
+        actual-start-daynum (max (:daynum query-start) (:daynum recur-start))
+        actual-end-daynum (if-let [recur-end (get recur-pat :recur-end)]
+                            (min (:daynum query-end) (:daynum recur-end))
+                            (:daynum query-end))]
+    (case (:recur-type recur-pat)
+      :day (let [divisor (:freq recur-pat)
+                 result-daynums (modulo-remainder-seq divisor
+                                                      (:daynum recur-start)
+                                                      actual-start-daynum
+                                                      actual-end-daynum)]
+             (map day-num-to-date result-daynums))
+      :week (let [divisor (* 7 (:freq recur-pat))
+                  first-week-occurrences-daynum
+                    (map #(soonest-day-of-week recur-start %) (:dow recur-pat))
+                  result-daynums (sort (mapcat #(modulo-remainder-seq
+                                                  divisor
+                                                  %
+                                                  actual-start-daynum
+                                                  actual-end-daynum)
+                                         first-week-occurrences-daynum))]
+              (map day-num-to-date result-daynums)))))
 
 (defn us-bank-holiday
   "Returns whether a day is a U.S. bank holiday. If so, return its name. Otherwise return nil."

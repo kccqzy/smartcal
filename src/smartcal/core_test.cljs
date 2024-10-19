@@ -234,3 +234,86 @@
               :dow #{1},
               :recur-start (c/ymd-to-date 2020 0 1),
               :recur-end (c/ymd-to-date 2020 1 1)}]]]])))
+
+(deftest recurrent-event-occurrences
+  (is (= (c/recurrent-event-occurrences {:recur-type :day, :freq 1}
+                                        (c/ymd-to-date 2024 9 18)
+                                        (c/ymd-to-date 2024 9 18)
+                                        (c/ymd-to-date 2024 9 25))
+         [(c/ymd-to-date 2024 9 18) (c/ymd-to-date 2024 9 19)
+          (c/ymd-to-date 2024 9 20) (c/ymd-to-date 2024 9 21)
+          (c/ymd-to-date 2024 9 22) (c/ymd-to-date 2024 9 23)
+          (c/ymd-to-date 2024 9 24)]))
+  (is (= (c/recurrent-event-occurrences {:recur-type :day, :freq 3}
+                                        (c/ymd-to-date 2024 9 18)
+                                        (c/ymd-to-date 2024 9 18)
+                                        (c/ymd-to-date 2024 10 3))
+         [(c/ymd-to-date 2024 9 18) (c/ymd-to-date 2024 9 21)
+          (c/ymd-to-date 2024 9 24) (c/ymd-to-date 2024 9 27)
+          (c/ymd-to-date 2024 9 30) (c/ymd-to-date 2024 10 2)]))
+  (is (= (c/recurrent-event-occurrences {:recur-type :day, :freq 30}
+                                        (c/ymd-to-date 2024 0 1)
+                                        (c/ymd-to-date 2023 0 1)
+                                        (c/ymd-to-date 2024 4 2))
+         [(c/ymd-to-date 2024 0 1) (c/ymd-to-date 2024 0 31)
+          (c/ymd-to-date 2024 2 1) (c/ymd-to-date 2024 2 31)
+          (c/ymd-to-date 2024 3 30)]))
+  (is (= (c/recurrent-event-occurrences {:recur-type :week, :freq 1, :dow #{1}}
+                                        (c/ymd-to-date 2024 0 1)
+                                        (c/ymd-to-date 2024 0 1)
+                                        (c/ymd-to-date 2024 1 1))
+         [(c/ymd-to-date 2024 0 1) (c/ymd-to-date 2024 0 8)
+          (c/ymd-to-date 2024 0 15) (c/ymd-to-date 2024 0 22)
+          (c/ymd-to-date 2024 0 29)]))
+  (is (= (c/recurrent-event-occurrences {:recur-type :week, :freq 1, :dow #{2}}
+                                        (c/ymd-to-date 2024 0 1)
+                                        (c/ymd-to-date 2024 0 1)
+                                        (c/ymd-to-date 2024 1 1))
+         [(c/ymd-to-date 2024 0 2) (c/ymd-to-date 2024 0 9)
+          (c/ymd-to-date 2024 0 16) (c/ymd-to-date 2024 0 23)
+          (c/ymd-to-date 2024 0 30)]))
+  (is (= (c/recurrent-event-occurrences {:recur-type :week, :freq 1, :dow #{2}}
+                                        ;; Recurrence started long before
+                                        ;; query window
+                                        (c/ymd-to-date 2020 0 1)
+                                        (c/ymd-to-date 2024 0 1)
+                                        (c/ymd-to-date 2024 1 1))
+         [(c/ymd-to-date 2024 0 2) (c/ymd-to-date 2024 0 9)
+          (c/ymd-to-date 2024 0 16) (c/ymd-to-date 2024 0 23)
+          (c/ymd-to-date 2024 0 30)]))
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :week, :freq 1, :dow #{1 5}}
+           (c/ymd-to-date 2024 0 5)
+           ;; Query window before recurrence start.
+           (c/ymd-to-date 2020 0 1)
+           (c/ymd-to-date 2024 0 20))
+         [(c/ymd-to-date 2024 0 5) (c/ymd-to-date 2024 0 8)
+          (c/ymd-to-date 2024 0 12) (c/ymd-to-date 2024 0 15)
+          (c/ymd-to-date 2024 0 19)]))
+  (is (= (c/recurrent-event-occurrences {:recur-type :week, :freq 2, :dow #{2}}
+                                        (c/ymd-to-date 2024 0 1)
+                                        (c/ymd-to-date 2024 0 1)
+                                        (c/ymd-to-date 2024 1 1))
+         [(c/ymd-to-date 2024 0 2) (c/ymd-to-date 2024 0 16)
+          (c/ymd-to-date 2024 0 30)]))
+  (is (= (c/recurrent-event-occurrences {:recur-type :week, :freq 4, :dow #{1}}
+                                        (c/ymd-to-date 2024 0 5)
+                                        (c/ymd-to-date 2024 0 1)
+                                        (c/ymd-to-date 2024 2 20))
+         [(c/ymd-to-date 2024 0 8) (c/ymd-to-date 2024 1 5)
+          (c/ymd-to-date 2024 2 4)]))
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :week, :freq 2, :dow #{2 6}}
+           (c/ymd-to-date 2024 0 1)
+           (c/ymd-to-date 2024 0 1)
+           (c/ymd-to-date 2024 1 1))
+         [(c/ymd-to-date 2024 0 2) (c/ymd-to-date 2024 0 6)
+          (c/ymd-to-date 2024 0 16) (c/ymd-to-date 2024 0 20)
+          (c/ymd-to-date 2024 0 30)]))
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :week, :freq 2, :dow #{1 5}}
+           (c/ymd-to-date 2024 0 5)
+           (c/ymd-to-date 2020 0 1)
+           (c/ymd-to-date 2024 0 20))
+         [(c/ymd-to-date 2024 0 5) (c/ymd-to-date 2024 0 8)
+          (c/ymd-to-date 2024 0 19)])))
