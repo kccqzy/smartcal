@@ -299,8 +299,11 @@
      | recur-week-freq <ws 'on' ws> dow-lit-plus
    recur-week-freq = (int-lit <ws 'weeks'> | <'week'>)
    recur-month
-    = recur-month-freq <ws 'on' ws ('the' ws)?> (d-lit-plus | occurrence-ordinal <ws> dow-lit)
-    | (<'on' ws 'the' ws>)? occurrence-ordinal-plus <ws> dow-lit <ws 'of' ws ('the' | 'each') ws 'month'>
+    = recur-month-freq <ws 'on' ws ('the' ws)?> recur-month-type
+    | (<'on' ws 'the' ws>)? recur-month-type <ws 'of' ws ('the' | 'each') ws 'month'>
+   <recur-month-type> = recur-month-by-d | recur-month-by-dow
+   recur-month-by-d = d-lit-plus
+   recur-month-by-dow = occurrence-ordinal-plus <ws> dow-lit
    recur-month-freq = (int-lit <ws 'months'> | <'month'>)
    recur-year
      = recur-year-freq <ws 'on' ws>
@@ -373,6 +376,8 @@
      :d-lit-plus (fn [& ms] {:d (into #{} (map :d ms))}),
      :recur-month-freq (fn ([] {:freq 1}) ([s] {:freq (js/parseInt s 10)})),
      :recur-month (fn [& a] (into {:recur-type :month, :freq 1} a)),
+     :recur-month-by-d (fn [& a] (into {:day-selection :d} a)),
+     :recur-month-by-dow (fn [& a] (into {:day-selection :dow} a)),
      :occurrence-ordinal #(assoc nil :occ (get occurrence-ordinals %)),
      :recur-year-freq (fn ([] {:freq 1}) ([s] {:freq (js/parseInt s 10)})),
      :recur-year (fn [& a] (into {:recur-type :year, :freq 1} a)),
