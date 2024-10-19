@@ -8,42 +8,139 @@
 (goog-define VERBOSE false)
 
 ;; -------------------------
+;; Types
+
+(defrecord Date [y m d weekday daynum])
+
+(defn- adjust-month
+  [y m]
+  (assert (>= y 1600))
+  (assert (>= m 0))
+  (if (>= m 12) [(+ y (quot m 12)) (mod m 12)] [y m]))
+
+(defn ymd-to-day-num
+  [y m d]
+  (let [[y m] (adjust-month y m)
+        ;; A cycle is 400 years
+        cycles (quot (- y 1600) 400)
+        remaining-years-in-cycle (mod (- y 1600) 400)
+        ;; Each cycle has 97 leap years.
+        leaps-from-cycles (* 97 cycles)
+        ;; A century is 100 years.
+        centuries (quot remaining-years-in-cycle 100)
+        is-first-year-in-cycle? (== remaining-years-in-cycle 0)
+        ;; Each century has 24 leap years from XX04 to XX96, except for the
+        ;; first year of a cycle which is handled by first-year-in-cycle.
+        leaps-from-centuries (* 24 centuries)
+        remaining-years (mod remaining-years-in-cycle 100)
+        leaps-from-years (quot remaining-years 4)
+        is-leap? (or is-first-year-in-cycle?
+                     (and (> remaining-years 0) (== (mod remaining-years 4) 0)))
+        leaps (+ 1
+                 leaps-from-cycles
+                 leaps-from-centuries
+                 leaps-from-years
+                 ;; Remove the current year from consideration.
+                 (if is-leap? -1 0))
+        day-num-jan-1 (+ leaps (* 365 (- y 1600)))
+        day-num-in-year
+          (+ (aget #js [0 31 59 90 120 151 181 212 243 273 304 334] m)
+             (if (and is-leap? (>= m 2)) 1 0)
+             (- d 1))]
+    (+ day-num-jan-1 day-num-in-year)))
+
+(defn day-num-to-date
+  [day-num]
+  (let [days-in-4y (+ 1 (* 4 365))
+        days-in-100y (+ 24 (* 100 365))
+        days-in-400y (+ 97 (* 400 365))
+        ;; For convenience, we want leap days to be at the end. Here
+        ;; remaining-days is the number of days since 1200-03-01. So that
+        ;; here a year begins in March. (Why not 1600-03-01? We hate
+        ;; negative numbers in modulus calculations.)
+        remaining-days (+ day-num (- days-in-400y 31 29))
+        cycles (quot remaining-days days-in-400y)
+        remaining-days (mod remaining-days days-in-400y)
+        centuries (quot remaining-days days-in-100y)
+        remaining-days (mod remaining-days days-in-100y)
+        ;; Fix centuries being 4.
+        is-centuries-4? (== centuries 4)
+        remaining-days (if is-centuries-4? days-in-100y remaining-days)
+        centuries (if is-centuries-4? 3 centuries)
+        fouryears (quot remaining-days days-in-4y)
+        remaining-days (mod remaining-days days-in-4y)
+        remaining-years (quot remaining-days 365)
+        remaining-days (mod remaining-days 365)
+        ;; Fix remaining-years being 4.
+        is-remaining-years-4? (== remaining-years 4)
+        remaining-days (if is-remaining-years-4? 365 remaining-days)
+        remaining-years (if is-remaining-years-4? 3 remaining-years)
+        y (+ 1200
+             (* 400 cycles)
+             (* 100 centuries)
+             (* 4 fouryears)
+             remaining-years)
+        ;; Since March is the first month, we don't have to think about
+        ;; leap years here and February always has 29 days. If it is not
+        ;; actually a leap year, the year calculation has taken care of it.
+        days-in-month [31 30 31 30 31 31 30 31 30 31 31 29]
+        [m remaining-days _]
+          (reduce (fn [[cur-month remaining finished :as st] days-in-cur-month]
+                    (if finished
+                      st
+                      (if (<= days-in-cur-month remaining)
+                        [(inc cur-month) (- remaining days-in-cur-month) false]
+                        [cur-month remaining true])))
+            [0 remaining-days false]
+            days-in-month)
+        ;; Fix the month, since we previously assumed March is the first
+        ;; month.
+        m (+ 2 m)
+        ;; Fix the year for the same reason.
+        is-month-overlarge? (>= m 12)
+        y (if is-month-overlarge? (inc y) y)
+        m (if is-month-overlarge? (- m 12) m)
+        d (inc remaining-days)]
+    (Date. y m d (mod (+ 6 day-num) 7) day-num)))
+
+(defn ymd-to-date [y m d] (day-num-to-date (ymd-to-day-num y m d)))
+
+(defn ymd-map-to-date
+  [{:keys [y m d]}]
+  (day-num-to-date (ymd-to-day-num y m d)))
+
+(defn today
+  []
+  (let [js-date (js/Date.)]
+    (day-num-to-date (ymd-to-day-num (.getFullYear js-date)
+                                     (.getMonth js-date)
+                                     (.getDate js-date)))))
+
+;; -------------------------
 ;; Functions
 
-(defn into-js-date [{:keys [y m d]}] (js/Date. y m d))
-
-(defn decompose-js-date
-  [jsdate]
-  (let [d (.getDate jsdate)
-        m (.getMonth jsdate)
-        y (.getFullYear jsdate)]
-    {:y y, :m m, :d d}))
-
-(defn to-key [{:keys [y m d]}] (+ (* y 10000) (* m 100) d))
-
 (defn actual-start
-  [start-ymd]
-  (let [jsdate (into-js-date start-ymd)
-        day (.getDay jsdate)]
-    (decompose-js-date (into-js-date (update-in start-ymd [:d] #(- % day))))))
+  [start-date]
+  (day-num-to-date (- (:daynum start-date) (:weekday start-date))))
 
 (defn next-week
   ([ymd] (next-week 1 ymd))
-  ([n ymd]
-   (decompose-js-date (into-js-date (update-in ymd [:d] #(+ % (* n 7)))))))
+  ([n ymd] (day-num-to-date (+ (:daynum ymd) (* n 7)))))
 
 (defn prev-week ([ymd] (next-week -1 ymd)) ([n ymd] (next-week (- n) ymd)))
 
 (defn nd-weekday-of-month
   [occurrence day-of-week m y]
-  (let [day-1 (into-js-date {:y y, :m m, :d 1})
-        first-occurrence-day (+ 1 (mod (- day-of-week (.getDay day-1)) 7))
-        all-occurrences-days
-          (take-while #(= m (.getMonth (into-js-date {:y y, :m m, :d %})))
-                      (iterate #(+ 7 %) first-occurrence-day))]
-    (if (>= occurrence 0)
-      (nth all-occurrences-days occurrence)
-      (nth (reverse all-occurrences-days) (- -1 occurrence)))))
+  (let [day-1 (ymd-to-date y m 1)
+        first-occurrence-day-num (+ (:daynum day-1)
+                                    (mod (- day-of-week (:weekday day-1)) 7))
+        all-occurrences-days-num (take-while
+                                   #(= m (:m (day-num-to-date %)))
+                                   (iterate #(+ 7 %) first-occurrence-day-num))]
+    (:d (day-num-to-date (if (>= occurrence 0)
+                           (nth all-occurrences-days-num occurrence)
+                           (nth (reverse all-occurrences-days-num)
+                                (- -1 occurrence)))))))
 
 (defn us-bank-holiday
   "Returns whether a day is a U.S. bank holiday. If so, return its name. Otherwise return nil."
@@ -68,31 +165,41 @@
 ;; -------------------------
 ;; State
 
-(def initial-app-state
-  {:weeks-to-show 5, :start-date (decompose-js-date (js/Date.))})
+(def initial-app-state {:weeks-to-show 5, :start-date (today)})
 
 (def app-state-validators
   {:weeks-to-show #(and (integer? %) (>= % 1) (<= % 12)),
-   :start-date #(and (:y %)
+   :start-date #(and (map? %)
+                     (:y %)
                      (:m %)
                      (:d %)
-                     (>= (:y %) 1900)
-                     (< (:y %) 2100)
-                     (= % (decompose-js-date (into-js-date %))))})
+                     (>= (:y %) 1600)
+                     (< (:y %) 2400)
+                     (>= (:m %) 0)
+                     (< (:m %) 12)
+                     (>= (:d %) 1)
+                     (<= (:d %) 31))})
+
+(defn save-state
+  [app-state]
+  (update app-state :start-date #(select-keys % [:y :m :d])))
 
 (defn load-state
   [reloaded-edn]
-  (into {}
-        (filter #(if-let [validator (get app-state-validators (first %))]
-                   (validator (second %))
-                   false)
-          reloaded-edn)))
+  (let [r (into {}
+                (filter #(if-let [validator (get app-state-validators
+                                                 (first %))]
+                           (validator (second %))
+                           false)
+                  reloaded-edn))]
+    (if (:start-date r) (update r :start-date ymd-map-to-date) r)))
 
 (defn reload-from-local-storage
   []
-  (try (js->clj (js/JSON.parse (.getItem js/window.localStorage "appstate"))
-                :keywordize-keys
-                true)
+  (try (load-state (js->clj (js/JSON.parse (.getItem js/window.localStorage
+                                                     "appstate"))
+                            :keywordize-keys
+                            true))
        (catch :default e
          (do (when VERBOSE (println "Reloading from localStorage failed"))
              {}))))
@@ -104,7 +211,7 @@
   (when VERBOSE (println "Saving to localStorage:" @app-state))
   (try (.setItem js/window.localStorage
                  "appstate"
-                 (js/JSON.stringify (clj->js @app-state)))
+                 (js/JSON.stringify (clj->js (save-state @app-state))))
        (catch :default e
          (when VERBOSE (println "Saving to localStorage failed")))))
 
@@ -215,7 +322,7 @@
      :d-lit (comp #(assoc nil :d %) #(js/parseInt % 10)),
      :mmm-lit #(assoc nil :m (.indexOf month-names %)),
      :mmmm-lit #(assoc nil :m (.indexOf full-month-names %)),
-     :date-lit (comp decompose-js-date into-js-date conj),
+     :date-lit (comp ymd-map-to-date conj),
      :recur-day-freq (fn ([] {:freq 1}) ([s] {:freq (js/parseInt s 10)})),
      :recur-day (fn [& a] (into {:recur-type :day, :freq 1} a)),
      :short-dow-lit #(assoc nil :dow (.indexOf day-names %)),
@@ -274,7 +381,6 @@
         [:cmd [:prev-cmd]] (swap! start-date prev-week)
         [:cmd [:prev-cmd n]] (swap! start-date #(prev-week (js/parseInt n 10)
                                                            %))
-        [:cmd [:today-cmd]] (reset! start-date (decompose-js-date (js/Date.)))
         [:cmd [:goto-cmd ymd]] (reset! start-date ymd)
         [:cmd [:add-cmd name [:single-occ ymd]]] (swap! user-defined-events
                                                    #(add-event name ymd %))
@@ -289,7 +395,6 @@
         [:cmd [:next-cmd n]] (str "Scroll down by " n " weeks")
         [:cmd [:prev-cmd]] "Scroll up by one week"
         [:cmd [:prev-cmd n]] (str "Scroll up by " n " weeks")
-        [:cmd [:today-cmd]] "Scroll to today"
         [:cmd [:goto-cmd {:y y, :m m, :d d}]]
           (str "Go to date " (get month-names m) " " d ", " y)
         [:cmd [:add-cmd name [:single-occ {:y y, :m m, :d d}]]]
@@ -406,9 +511,8 @@
     [:div.td.th "Thu"] [:div.td.th "Fri"] [:div.td.th "Sat"]
     (let [start (actual-start @start-date)]
       (doall (for [x (range (* 7 @weeks-to-show))]
-               (let [date (decompose-js-date
-                            (into-js-date (update-in start [:d] #(+ x %))))]
-                 ^{:key (to-key date)} [day-component date (= x 0)]))))]
+               (let [date (day-num-to-date (+ x (:daynum start)))]
+                 ^{:key (:daynum date)} [day-component date (= x 0)]))))]
    [:div#cmdline-inout [cmdline-output-component] [cmdline-component]]])
 
 (defn home-page [] [calendar-component])
@@ -418,6 +522,7 @@
 
 (defn mount-root
   []
+  (when VERBOSE (println "Initial app state " @app-state))
   (dom/render [home-page] (.getElementById js/document "app")))
 
 (defn ^:export init! [] (mount-root))
