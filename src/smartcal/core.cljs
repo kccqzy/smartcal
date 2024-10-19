@@ -261,12 +261,12 @@
    recur-week-freq = (int-lit <ws 'weeks'> | <'week'>)
    recur-month
     = recur-month-freq <ws 'on' ws ('the' ws)?> (d-lit-plus | occurrence-ordinal <ws> dow-lit)
-    | (<'on' ws 'the' ws>)? occurrence-ordinal <ws> dow-lit <ws 'of' ws ('the' | 'each') ws 'month'>
+    | (<'on' ws 'the' ws>)? occurrence-ordinal-plus <ws> dow-lit <ws 'of' ws ('the' | 'each') ws 'month'>
    recur-month-freq = (int-lit <ws 'months'> | <'month'>)
    recur-year
      = recur-year-freq <ws 'on' ws>
        (md-lit
-       | <('the' ws)?> occurrence-ordinal <ws> dow-lit <ws 'of' ws> month-lit-plus)
+       | <('the' ws)?> occurrence-ordinal-plus <ws> dow-lit <ws 'of' ws> month-lit-plus)
    recur-year-freq = (int-lit <ws 'years'> | <'year'>)
    recur-start = <ws 'from' ws> date-lit
    recur-end
@@ -296,6 +296,7 @@
    month-lit-plus = month-lit (<ws? ',' ws?> month-lit)*
    <ordinal-suffix> = 'st' | 'nd' | 'rd' | 'th'
    occurrence-ordinal = 'first' | 'second' | 'third' | 'fourth' | 'fifth' | 'last'
+   occurrence-ordinal-plus = occurrence-ordinal (<ws? ',' ws?> occurrence-ordinal)*
   ")
 
 (def month-names
@@ -337,6 +338,7 @@
      :recur-year-freq (fn ([] {:freq 1}) ([s] {:freq (js/parseInt s 10)})),
      :recur-year (fn [& a] (into {:recur-type :year, :freq 1} a)),
      :month-lit-plus (fn [& ms] {:m (into #{} (map :m ms))}),
+     :occurrence-ordinal-plus (fn [& ms] {:occ (into #{} (map :occ ms))}),
      :recurring (fn [b & a] [:recurring (into b a)])}
     parsed))
 
