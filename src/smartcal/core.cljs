@@ -277,25 +277,24 @@
 
 (defn get-visible-events
   "Determine which events are visible in the current view, given the boundaries of
-  the current view and all available events. Return a sequence of [date, event]."
+  the current view and all available events. Return a map with :date :event."
   [from until events]
   (mapcat (fn [ev]
             (if-let [single-occ (:single-occ ev)]
               (if (and (>= (:daynum single-occ) (:daynum from))
                        (< (:daynum single-occ) (:daynum until)))
-                [[single-occ (:name ev)]]
+                [{:date single-occ, :event ev}]
                 nil)
               (if-let [recur-pat (:recurring ev)]
-                (map #(vector % (:name ev))
+                (map #(hash-map :date % :event ev)
                   (recurrent-event-occurrences recur-pat epoch from until)))))
     events))
 
 (defn get-days-with-events
-  "Similar to get-visible-events except that the result is a map from date to a seq of events."
+  "Similar to get-visible-events except that the result is a map from date to a seq of event names."
   [from until events]
-  (reduce (fn [rv [date ev]] (update rv date #(if % (conj % ev) [ev])))
-    {}
-    (get-visible-events from until events)))
+  (update-vals (group-by :date (get-visible-events from until events))
+               #(mapv :event %)))
 
 ;; -------------------------
 ;; State
@@ -514,9 +513,13 @@
     (str (if (or show-complete (= 1 d)) (str (get month-names m) " "))
          d
          (if (or show-complete (and (= 1 d) (= 0 m))) (str ", " y)))]
-   (let [events-sorted
-           (sort-by identity gstr/intAwareCompare events-on-this-date)]
-     (into [:ul.events] (map #(vector :li %) events-sorted)))])
+   (let [events-sorted (sort-by :name gstr/intAwareCompare events-on-this-date)]
+     (into [:ul.events]
+           (map #(vector :li
+                         ;; TODO: format this nicely.
+                         {:title (pr-str %)}
+                         (:name %))
+             events-sorted)))])
 
 (def cmdline-prompt ">>> ")
 

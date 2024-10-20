@@ -551,15 +551,16 @@
   (is (= (c/get-visible-events (c/ymd-to-date 2024 0 1)
                                (c/ymd-to-date 2024 1 1)
                                example-events)
-         [[(c/ymd-to-date 2024 0 1) "2024 New Year"]
-          [(c/ymd-to-date 2024 0 1) "New Year"]
-          [(c/ymd-to-date 2024 0 14) "Very Good Day"]
-          [(c/ymd-to-date 2024 0 28) "Very Good Day"]])))
+         [{:date (c/ymd-to-date 2024 0 1), :event (get example-events 1)}
+          {:date (c/ymd-to-date 2024 0 1), :event (get example-events 2)}
+          {:date (c/ymd-to-date 2024 0 14), :event (get example-events 4)}
+          {:date (c/ymd-to-date 2024 0 28), :event (get example-events 4)}])))
 
 (deftest get-days-with-events
   (is (= (c/get-days-with-events (c/ymd-to-date 2024 0 1)
                                  (c/ymd-to-date 2024 1 1)
                                  example-events)
-         {(c/ymd-to-date 2024 0 1) ["2024 New Year" "New Year"],
-          (c/ymd-to-date 2024 0 14) ["Very Good Day"],
-          (c/ymd-to-date 2024 0 28) ["Very Good Day"]})))
+         {(c/ymd-to-date 2024 0 1) [(get example-events 1)
+                                    (get example-events 2)],
+          (c/ymd-to-date 2024 0 14) [(get example-events 4)],
+          (c/ymd-to-date 2024 0 28) [(get example-events 4)]})))
