@@ -500,7 +500,8 @@
                                     (into {:day-selection :occ-dow-month} a)),
      :month-lit-plus (fn [& ms] {:m (into #{} (map :m ms))}),
      :occurrence-ordinal-plus (fn [& ms] {:occ (into #{} (map :occ ms))}),
-     :recurring (fn [b & a] [:recurring (into b a)])}
+     :recurring (fn [b & a] {:recurring (into b a)}),
+     :single-occ (fn [d] {:single-occ d})}
     parsed))
 
 ;; -------------------------
@@ -543,7 +544,7 @@
                                                            %))
         [:cmd [:goto-cmd ymd]] (reset! start-date ymd)
         [:cmd [:add-cmd name date-spec]]
-          (swap! events #(add-event name (into {} [date-spec]) %))
+          (swap! events #(add-event name date-spec %))
         :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
 
 (defn explain-input-component
