@@ -3,6 +3,7 @@
             [reagent.dom :as dom]
             [instaparse.core :as insta :refer [defparser]]
             [cljs.core.match :refer [match]]
+            [clojure.string :as cstr]
             [goog.string :as gstr]))
 
 (goog-define VERBOSE false)
@@ -296,6 +297,112 @@
   (update-vals (group-by :date (get-visible-events from until events))
                #(mapv :event %)))
 
+(def month-names
+  ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"])
+
+(def full-month-names
+  ["January" "February" "March" "April" "May" "June" "July" "August" "September"
+   "October" "November" "December"])
+
+(def day-names ["Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat"])
+
+(def full-day-names
+  ["Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"])
+
+(def occurrence-ordinals
+  {"first" 0, "second" 1, "third" 2, "fourth" 4, "fifth" 5, "last" -1})
+
+(def occurrence-ordinals-inv (clojure.set/map-invert occurrence-ordinals))
+
+(defn format-date-en-us
+  [{:keys [y m d]}]
+  (str (get month-names m) " " d ", " y))
+
+(defn day-to-ordinal
+  [n]
+  (str n
+       (cond (and (not= n 11) (= (mod n 10) 1)) "st"
+             (and (not= n 12) (= (mod n 10) 2)) "nd"
+             (and (not= n 13) (= (mod n 10) 3)) "rd"
+             :else "th")))
+
+(defn format-freq
+  "Formats the recurrent period. The plural is formed by simply adding an 's'."
+  [recur-pat]
+  (let [n (name (:recur-type recur-pat))]
+    (str "every "
+         (if (= 1 (:freq recur-pat)) n (str (:freq recur-pat) " " n "s")))))
+
+(defn format-occ
+  [recur-pat]
+  (cstr/join ", "
+             (map #(get occurrence-ordinals-inv %) (sort (:occ recur-pat)))))
+
+(defn format-recur-pat
+  [recur-pat]
+  (let [start (if-let [start (:recur-start recur-pat)]
+                (if (> (:daynum start) 0)
+                  (str " from " (format-date-en-us start))))
+        until (if-let [until (:recur-end recur-pat)]
+                (str " until " (format-date-en-us until)))
+        pat (case (:recur-type recur-pat)
+              :day (format-freq recur-pat)
+              :week (str "every " (if (= 1 (:freq recur-pat))
+                                    "week"
+                                    (str (:freq recur-pat) " weeks"))
+                         " on " (cstr/join ", "
+                                           (map #(get day-names %)
+                                             (sort (:dow recur-pat)))))
+              :month (str (format-freq recur-pat)
+                          " on the "
+                          (case (:day-selection recur-pat)
+                            :d (cstr/join ", "
+                                          (map day-to-ordinal
+                                            (sort (:d recur-pat))))
+                            :dow (str (format-occ recur-pat)
+                                      " "
+                                      (get day-names (:dow recur-pat)))))
+              :year (str (format-freq recur-pat)
+                         " on "
+                         (case (:day-selection recur-pat)
+                           :md (str (get month-names (:m recur-pat))
+                                    " "
+                                    (:d recur-pat))
+                           :occ-dow-month
+                             (str "the " (format-occ recur-pat)
+                                  " " (get day-names (:dow recur-pat))
+                                  " of " (cstr/join ", "
+                                                    (map #(get month-names %)
+                                                      (sort (:m
+                                                              recur-pat))))))))]
+    (str pat start until)))
+
+(defn format-future-occurrences
+  [recur-pat start until]
+  (if (or (nil? start) (nil? until))
+    ""
+    (let [visible-occurrences-etc
+            ;; TODO get rid of the implicit (today) so we can test this.
+            (take 4 (recurrent-event-occurrences recur-pat (today) start until))
+          displayed-occurrences (take 3 visible-occurrences-etc)
+          ellipsis (= 4 (count visible-occurrences-etc))]
+      (if (seq displayed-occurrences)
+        (str " (occurring "
+             (cstr/join "; " (map format-date-en-us displayed-occurrences))
+             (if ellipsis "; \u2026")
+             ")")))))
+
+(defn format-event
+  [name occ start until]
+  (if-let [date (:single-occ occ)]
+    (str "an event named \"" name "\" on " (format-date-en-us date))
+    (if-let [recur-pat (:recurring occ)]
+      (str "a recurrent event named \""
+           name
+           "\" repeating "
+           (format-recur-pat recur-pat)
+           (format-future-occurrences recur-pat start until)))))
+
 ;; -------------------------
 ;; State
 
@@ -454,21 +561,6 @@
    occurrence-ordinal-plus = occurrence-ordinal (<ws? ',' ws?> occurrence-ordinal)*
   ")
 
-(def month-names
-  ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"])
-
-(def full-month-names
-  ["January" "February" "March" "April" "May" "June" "July" "August" "September"
-   "October" "November" "December"])
-
-(def day-names ["Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat"])
-
-(def full-day-names
-  ["Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"])
-
-(def occurrence-ordinals
-  {"first" 0, "second" 1, "third" 2, "fourth" 4, "fifth" 5, "last" -1})
-
 (defn transform-parsed-dates
   [parsed]
   (insta/transform
@@ -509,17 +601,17 @@
 (defn day-component
   [{:keys [y m d], :as ymd} show-complete events-on-this-date]
   [:div.td
-   [:p.daynum
-    (str (if (or show-complete (= 1 d)) (str (get month-names m) " "))
-         d
-         (if (or show-complete (and (= 1 d) (= 0 m))) (str ", " y)))]
+   [:p.day
+    (if show-complete
+      (format-date-en-us ymd)
+      (str (if (= 1 d) (str (get month-names m) " "))
+           d
+           (if (and (= 1 d) (= 0 m)) (str ", " y))))]
    (let [events-sorted (sort-by :name gstr/intAwareCompare events-on-this-date)]
-     (into [:ul.events]
-           (map #(vector :li
-                         ;; TODO: format this nicely.
-                         {:title (pr-str %)}
-                         (:name %))
-             events-sorted)))])
+     (into
+       [:ul.events]
+       (map #(vector :li {:title (format-event (:name %) % nil nil)} (:name %))
+         events-sorted)))])
 
 (def cmdline-prompt ">>> ")
 
@@ -551,7 +643,7 @@
         :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
 
 (defn explain-input-component
-  [input]
+  [input start until]
   (let [parsed (transform-parsed-dates (cmdline-parser input))]
     (if-not (insta/failure? parsed)
       (match parsed
@@ -559,17 +651,13 @@
         [:cmd [:next-cmd n]] (str "Scroll down by " n " weeks")
         [:cmd [:prev-cmd]] "Scroll up by one week"
         [:cmd [:prev-cmd n]] (str "Scroll up by " n " weeks")
-        [:cmd [:goto-cmd {:y y, :m m, :d d}]]
-          (str "Go to date " (get month-names m) " " d ", " y)
-        [:cmd [:add-cmd name [:single-occ {:y y, :m m, :d d}]]]
-          (str "Add an event named \"" name
-               "\" on " (get month-names m)
-               " " d
-               ", " y)
+        [:cmd [:goto-cmd date]] (str "Go to date " (format-date-en-us date))
+        [:cmd [:add-cmd name occ]] (str "Add "
+                                        (format-event name occ start until))
         :else (pr-str parsed)))))
 
 (defn cmdline-component
-  []
+  [start until]
   (let [textarea-ref (atom nil)
         textarea-change
           (fn [ev]
@@ -629,27 +717,27 @@
                                 el
                                 (max start cmdline-prompt-length)
                                 (max end cmdline-prompt-length)))))]
-    (fn [] [:div#cmdline
-            [:textarea#cmdline-in.cmdline
-             {:ref #(reset! textarea-ref %),
-              :spell-check "false",
-              :value (str cmdline-prompt @cmdline-input),
-              :on-change textarea-change,
-              :on-select textarea-select}]
-            (let [input @cmdline-input
-                  parsed (cmdline-parser input :total true :unhide :all)
-                  did-fail (insta/failure? parsed)]
-              [:pre#cmdline-disp.cmdline
-               {:aria-hidden "true",
-                :class
-                  (if (empty? input) "" (if did-fail "failed" "succeeded"))}
-               [:code cmdline-prompt
-                (if (seq parsed) [cmdline-display-component parsed])
-                (if-not (empty? input)
-                  [:span.comment " # "
-                   (if did-fail
-                     "Parse Error"
-                     [explain-input-component input])])]])])))
+    (fn [start until]
+      [:div#cmdline
+       [:textarea#cmdline-in.cmdline
+        {:ref #(reset! textarea-ref %),
+         :spell-check "false",
+         :value (str cmdline-prompt @cmdline-input),
+         :on-change textarea-change,
+         :on-select textarea-select}]
+       (let [input @cmdline-input
+             parsed (cmdline-parser input :total true :unhide :all)
+             did-fail (insta/failure? parsed)]
+         [:pre#cmdline-disp.cmdline
+          {:aria-hidden "true",
+           :class (if (empty? input) "" (if did-fail "failed" "succeeded"))}
+          [:code cmdline-prompt
+           (if (seq parsed) [cmdline-display-component parsed])
+           (if-not (empty? input)
+             [:span.comment " # "
+              (if did-fail
+                "Parse Error"
+                [explain-input-component input start until])])]])])))
 
 (defn cmdline-output-component
   []
@@ -658,29 +746,31 @@
 
 (defn calendar-component
   []
-  [:div#cal
-   [:div#control [:p "Weeks to display: "]
-    [:input
-     {:type "range",
-      :value @weeks-to-show,
-      :min 1,
-      :max 120,
-      :on-change (fn [e]
-                   (let [new-value (js/parseInt (.. e -target -value))]
-                     (reset! weeks-to-show new-value)))}] [:p @weeks-to-show]]
-   [:div#table
-    {:style {:grid-template-rows
-               (str "30px repeat(" @weeks-to-show ", minmax(5rem, 1fr))")}}
-    [:div.td.th "Sun"] [:div.td.th "Mon"] [:div.td.th "Tue"] [:div.td.th "Wed"]
-    [:div.td.th "Thu"] [:div.td.th "Fri"] [:div.td.th "Sat"]
-    (let [start (actual-start @start-date)
-          until (day-num-to-date (+ (* 7 @weeks-to-show) (:daynum start)))
-          days-with-events (get-days-with-events start until @events)]
-      (doall (for [x (range (* 7 @weeks-to-show))]
-               (let [date (day-num-to-date (+ x (:daynum start)))]
-                 ^{:key (:daynum date)}
-                 [day-component date (= x 0) (get days-with-events date)]))))]
-   [:div#cmdline-inout [cmdline-output-component] [cmdline-component]]])
+  (let [start (actual-start @start-date)
+        until (day-num-to-date (+ (* 7 @weeks-to-show) (:daynum start)))]
+    [:div#cal
+     [:div#control [:p "Weeks to display: "]
+      [:input
+       {:type "range",
+        :value @weeks-to-show,
+        :min 1,
+        :max 120,
+        :on-change (fn [e]
+                     (let [new-value (js/parseInt (.. e -target -value))]
+                       (reset! weeks-to-show new-value)))}] [:p @weeks-to-show]]
+     [:div#table
+      {:style {:grid-template-rows
+                 (str "30px repeat(" @weeks-to-show ", minmax(5rem, 1fr))")}}
+      [:div.td.th "Sun"] [:div.td.th "Mon"] [:div.td.th "Tue"]
+      [:div.td.th "Wed"] [:div.td.th "Thu"] [:div.td.th "Fri"]
+      [:div.td.th "Sat"]
+      (let [days-with-events (get-days-with-events start until @events)]
+        (doall (for [x (range (* 7 @weeks-to-show))]
+                 (let [date (day-num-to-date (+ x (:daynum start)))]
+                   ^{:key (:daynum date)}
+                   [day-component date (= x 0) (get days-with-events date)]))))]
+     [:div#cmdline-inout [cmdline-output-component]
+      [cmdline-component start until]]]))
 
 (defn home-page [] [calendar-component])
 

@@ -564,3 +564,62 @@
                                     (get example-events 2)],
           (c/ymd-to-date 2024 0 14) [(get example-events 4)],
           (c/ymd-to-date 2024 0 28) [(get example-events 4)]})))
+
+(deftest format-recur-pat
+  (is (= (c/format-recur-pat {:recur-type :day, :freq 1}) "every day"))
+  (is (= (c/format-recur-pat {:recur-type :day, :freq 3}) "every 3 days"))
+  (is (= (c/format-recur-pat {:recur-type :day, :freq 300}) "every 300 days"))
+  (is (= (c/format-recur-pat {:recur-type :day,
+                              :freq 300,
+                              :recur-start (c/ymd-to-date 2020 10 1)})
+         "every 300 days from Nov 1, 2020"))
+  (is (= (c/format-recur-pat
+           {:recur-type :day, :freq 300, :recur-start c/epoch})
+         "every 300 days"))
+  (is (= (c/format-recur-pat {:recur-type :week, :freq 1, :dow #{1}})
+         "every week on Mon"))
+  (is (= (c/format-recur-pat {:recur-type :week, :freq 1, :dow #{1 3 5}})
+         "every week on Mon, Wed, Fri"))
+  (is (= (c/format-recur-pat {:recur-type :week, :freq 1, :dow #{1 3 5}})
+         "every week on Mon, Wed, Fri"))
+  (is (= (c/format-recur-pat
+           {:recur-type :month, :freq 1, :day-selection :d, :d #{1 3 5}})
+         "every month on the 1st, 3rd, 5th"))
+  (is (= (c/format-recur-pat
+           {:recur-type :month, :freq 2, :day-selection :d, :d #{1 11 21 31}})
+         "every 2 months on the 1st, 11th, 21st, 31st"))
+  (is (=
+        (c/format-recur-pat
+          {:recur-type :month, :freq 2, :day-selection :dow, :dow 1, :occ #{0}})
+        "every 2 months on the first Mon"))
+  (is
+    (=
+      (c/format-recur-pat
+        {:recur-type :month, :freq 2, :day-selection :dow, :dow 1, :occ #{0 2}})
+      "every 2 months on the first, third Mon"))
+  (is (= (c/format-recur-pat
+           {:recur-type :year, :freq 1, :day-selection :md, :m 1, :d 2})
+         "every year on Feb 2"))
+  (is (= (c/format-recur-pat {:recur-type :year,
+                              :freq 1,
+                              :day-selection :occ-dow-month,
+                              :occ #{-1},
+                              :m #{5},
+                              :dow 5})
+         "every year on the last Fri of Jun")))
+
+(deftest format-event
+  (is (= (c/format-event "x" {:single-occ (c/ymd-to-date 2010 1 1)} nil nil)
+         "an event named \"x\" on Feb 1, 2010"))
+  (is
+    (=
+      (c/format-event "x"
+                      {:recurring {:recur-type :year,
+                                   :freq 1,
+                                   :day-selection :occ-dow-month,
+                                   :occ #{-1},
+                                   :m #{5},
+                                   :dow 5}}
+                      nil
+                      nil)
+      "a recurrent event named \"x\" repeating every year on the last Fri of Jun")))
