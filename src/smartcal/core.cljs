@@ -660,7 +660,7 @@
      {:type "range",
       :value @weeks-to-show,
       :min 1,
-      :max 12,
+      :max 120,
       :on-change (fn [e]
                    (let [new-value (js/parseInt (.. e -target -value))]
                      (reset! weeks-to-show new-value)))}] [:p @weeks-to-show]]
