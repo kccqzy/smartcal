@@ -150,21 +150,32 @@
   (+ (:daynum start) (mod (- dow (:weekday start)) 7)))
 
 (defn weekdays-of-month
+  "Find all days that are of the given day of week in a month. Returns a vector."
   [day-of-week m y]
   (let [day-1 (ymd-to-date y m 1)
         first-occurrence-day-num (soonest-day-of-week day-1 day-of-week)
         all-occurrences-days-num (take-while
                                    #(== (:m day-1) (:m (day-num-to-date %)))
                                    (iterate #(+ 7 %) first-occurrence-day-num))]
-    (map day-num-to-date all-occurrences-days-num)))
+    (mapv day-num-to-date all-occurrences-days-num)))
+
+(defn get-neg
+  "Just like get on vector except it supports negative indexing."
+  [v i]
+  (get v (if (>= i 0) i (+ (count v) i))))
+
+(defn all-nd-weekdays-of-month
+  [occurrences day-of-week m y]
+  (let [all-dows (weekdays-of-month day-of-week m y)]
+    (->> occurrences
+         (map #(get-neg all-dows %))
+         (filter identity)
+         (sort-by :d))))
 
 (defn nd-weekday-of-month
-  "Deprecated in favor of select-dates-from-month-recur."
+  "Deprecated."
   [occurrence day-of-week m y]
-  (let [all-dates (weekdays-of-month day-of-week m y)]
-    (if (>= occurrence 0)
-      (nth all-dates occurrence nil)
-      (nth (reverse all-dates) (- -1 occurrence) nil))))
+  (first (all-nd-weekdays-of-month [occurrence] day-of-week m y)))
 
 (defn select-dates-from-month-recur
   "Select days from a monthly recurring pattern according to :day-selection."
@@ -176,13 +187,21 @@
                  ;; instead of wrapping.
                  (if (= (:d date) %) date nil))
            (sort (:d recur-pat))))
-    :dow (let [all-days (weekdays-of-month (:dow recur-pat) monthnum 1600)]
-           (sort-by :d
-                    (filter identity
-                      (map #(if (>= % 0)
-                              (nth all-days % nil)
-                              (nth (reverse all-days) (- -1 %) nil))
-                        (:occ recur-pat)))))))
+    :dow (all-nd-weekdays-of-month (:occ recur-pat)
+                                   (:dow recur-pat)
+                                   monthnum
+                                   1600)))
+
+(defn select-dates-from-year-recur
+  [recur-pat y]
+  (case (:day-selection recur-pat)
+    :md (let [date (ymd-to-date y (:m recur-pat) (:d recur-pat))]
+          ;; Need to filter away non-exist dates such as Feb 31 instead
+          ;; of wrapping.
+          (if (and (= (:d date) (:d recur-pat))) [date] nil))
+    :occ-dow-month
+      (mapcat #(all-nd-weekdays-of-month (:occ recur-pat) (:dow recur-pat) % y)
+        (:m recur-pat))))
 
 (defn recurrent-event-occurrences
   [recur-pat default-recur-start query-start query-end]
@@ -225,13 +244,29 @@
                        (month-num query-end)))
               selected-months (modulo-remainder-seq monthnum-divisor
                                                     monthnum-recur-start
-                                                    (max (month-num query-start)
-                                                         monthnum-recur-start)
-                                                    (inc (month-num query-end)))
+                                                    actual-start-monthnum
+                                                    actual-end-monthnum)
               all-days (mapcat #(select-dates-from-month-recur recur-pat %)
                          selected-months)]
-          (drop-while #(< (:daynum %) (:daynum query-start))
-                      (take-while #(< (:daynum %) (:daynum query-end))
+          (drop-while #(< (:daynum %) actual-start-daynum)
+                      (take-while #(< (:daynum %) actual-end-daynum) all-days)))
+      :year
+        ;; The semantics of "year" mode is similar to "month" mode. TODO:
+        ;; reduce code duplication.
+        (let [year-divisor (:freq recur-pat)
+              year-recur-start (:y recur-start)
+              actual-start-y (max (:y query-start) year-recur-start)
+              actual-end-y (inc (if-let [recur-end (get recur-pat :recur-end)]
+                                  (min (:y recur-end) (:y query-end))
+                                  (:y query-end)))
+              selected-years (modulo-remainder-seq year-divisor
+                                                   year-recur-start
+                                                   actual-start-y
+                                                   actual-end-y)
+              all-days (mapcat #(select-dates-from-year-recur recur-pat %)
+                         selected-years)]
+          (drop-while #(< (:daynum %) actual-start-daynum)
+                      (take-while #(< (:daynum %) actual-end-daynum)
                                   all-days))))))
 
 (defn us-bank-holiday
@@ -358,10 +393,10 @@
    recur-month-by-d = d-lit-plus
    recur-month-by-dow = occurrence-ordinal-plus <ws> dow-lit
    recur-month-freq = (int-lit <ws 'months'> | <'month'>)
-   recur-year
-     = recur-year-freq <ws 'on' ws>
-       (md-lit
-       | <('the' ws)?> occurrence-ordinal-plus <ws> dow-lit <ws 'of' ws> month-lit-plus)
+   recur-year = recur-year-freq <ws 'on' ws> recur-year-type
+   <recur-year-type> = recur-year-by-md | recur-year-by-occ-dow-month
+   recur-year-by-md = md-lit
+   recur-year-by-occ-dow-month = <('the' ws)?> occurrence-ordinal-plus <ws> dow-lit <ws 'of' ws> month-lit-plus
    recur-year-freq = (int-lit <ws 'years'> | <'year'>)
    recur-start = <ws 'from' ws> date-lit
    recur-end
@@ -434,6 +469,9 @@
      :occurrence-ordinal #(assoc nil :occ (get occurrence-ordinals %)),
      :recur-year-freq (fn ([] {:freq 1}) ([s] {:freq (js/parseInt s 10)})),
      :recur-year (fn [& a] (into {:recur-type :year, :freq 1} a)),
+     :recur-year-by-md (fn [& a] (into {:day-selection :md} a)),
+     :recur-year-by-occ-dow-month (fn [& a]
+                                    (into {:day-selection :occ-dow-month} a)),
      :month-lit-plus (fn [& ms] {:m (into #{} (map :m ms))}),
      :occurrence-ordinal-plus (fn [& ms] {:occ (into #{} (map :occ ms))}),
      :recurring (fn [b & a] [:recurring (into b a)])}

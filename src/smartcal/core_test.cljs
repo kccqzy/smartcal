@@ -213,50 +213,83 @@
               :day-selection :dow,
               :dow 1,
               :occ #{-1}}]]]]))
-  (is (= (parses "add \"x\" every year on Dec 26")
-         [[:cmd
-           [:add-cmd "x"
-            [:recurring {:recur-type :year, :freq 1, :m 11, :d 26}]]]]))
-  (is (= (parses "add \"x\" every year on 26 Dec")
-         [[:cmd
-           [:add-cmd "x"
-            [:recurring {:recur-type :year, :freq 1, :m 11, :d 26}]]]]))
-  (is (= (parses "add \"x\" every year on 1226")
-         [[:cmd
-           [:add-cmd "x"
-            [:recurring {:recur-type :year, :freq 1, :m 11, :d 26}]]]]))
-  (is (= (parses "add \"x\" every 2 years on 26 Dec")
-         [[:cmd
-           [:add-cmd "x"
-            [:recurring {:recur-type :year, :freq 2, :m 11, :d 26}]]]]))
+  (is (=
+        (parses "add \"x\" every year on Dec 26")
+        [[:cmd
+          [:add-cmd "x"
+           [:recurring
+            {:recur-type :year, :freq 1, :day-selection :md, :m 11, :d 26}]]]]))
+  (is (=
+        (parses "add \"x\" every year on 26 Dec")
+        [[:cmd
+          [:add-cmd "x"
+           [:recurring
+            {:recur-type :year, :freq 1, :day-selection :md, :m 11, :d 26}]]]]))
+  (is (=
+        (parses "add \"x\" every year on 1226")
+        [[:cmd
+          [:add-cmd "x"
+           [:recurring
+            {:recur-type :year, :freq 1, :day-selection :md, :m 11, :d 26}]]]]))
+  (is (=
+        (parses "add \"x\" every 2 years on 26 Dec")
+        [[:cmd
+          [:add-cmd "x"
+           [:recurring
+            {:recur-type :year, :freq 2, :day-selection :md, :m 11, :d 26}]]]]))
   (is (= (parses "add \"x\" every year on last Friday of June")
          [[:cmd
            [:add-cmd "x"
             [:recurring
-             {:recur-type :year, :freq 1, :occ #{-1}, :m #{5}, :dow 5}]]]]))
-  (is
-    (= (parses
-         "add \"fut exp\" every year on third Friday of March, June, Sep, Dec")
-       [[:cmd
-         [:add-cmd "fut exp"
-          [:recurring
-           {:recur-type :year, :freq 1, :occ #{2}, :m #{2 5 8 11}, :dow 5}]]]]))
+             {:recur-type :year,
+              :freq 1,
+              :day-selection :occ-dow-month,
+              :occ #{-1},
+              :m #{5},
+              :dow 5}]]]]))
+  (is (=
+        (parses
+          "add \"fut exp\" every year on third Friday of March, June, Sep, Dec")
+        [[:cmd
+          [:add-cmd "fut exp"
+           [:recurring
+            {:recur-type :year,
+             :freq 1,
+             :day-selection :occ-dow-month,
+             :occ #{2},
+             :m #{2 5 8 11},
+             :dow 5}]]]]))
   (is (= (parses "add \"x\" every year on the second Monday of Jan")
          [[:cmd
            [:add-cmd "x"
             [:recurring
-             {:recur-type :year, :freq 1, :occ #{1}, :m #{0}, :dow 1}]]]]))
+             {:recur-type :year,
+              :freq 1,
+              :day-selection :occ-dow-month,
+              :occ #{1},
+              :m #{0},
+              :dow 1}]]]]))
   (is (= (parses
            "add \"x\" every year on the first, third Wednesday of Jan, Jul")
          [[:cmd
            [:add-cmd "x"
             [:recurring
-             {:recur-type :year, :freq 1, :occ #{0 2}, :m #{0 6}, :dow 3}]]]]))
+             {:recur-type :year,
+              :freq 1,
+              :day-selection :occ-dow-month,
+              :occ #{0 2},
+              :m #{0 6},
+              :dow 3}]]]]))
   (is (= (parses "add \"x\" every 4 years on the last Monday of February")
          [[:cmd
            [:add-cmd "x"
             [:recurring
-             {:recur-type :year, :freq 4, :occ #{-1}, :m #{1}, :dow 1}]]]]))
+             {:recur-type :year,
+              :freq 4,
+              :day-selection :occ-dow-month,
+              :occ #{-1},
+              :m #{1},
+              :dow 1}]]]]))
   (is (= (parses "add \"x\" every week on Mon from 20200101 ")
          [[:cmd
            [:add-cmd "x"
@@ -462,4 +495,40 @@
        [(c/ymd-to-date 2020 0 26) (c/ymd-to-date 2021 1 28)
         (c/ymd-to-date 2022 2 27) (c/ymd-to-date 2023 3 30)
         (c/ymd-to-date 2024 4 26)])
-    "finds last Sunday every 13 months"))
+    "finds last Sunday every 13 months")
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :year, :freq 1, :day-selection :md, :m 11, :d 25}
+           (c/ymd-to-date 2020 0 1)
+           (c/ymd-to-date 2019 0 1)
+           (c/ymd-to-date 2025 0 1))
+         [(c/ymd-to-date 2020 11 25) (c/ymd-to-date 2021 11 25)
+          (c/ymd-to-date 2022 11 25) (c/ymd-to-date 2023 11 25)
+          (c/ymd-to-date 2024 11 25)])
+      "finds fixed date every year")
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :year, :freq 1, :day-selection :md, :m 1, :d 29}
+           (c/ymd-to-date 1995 0 1)
+           (c/ymd-to-date 1995 0 1)
+           (c/ymd-to-date 2010 0 1))
+         [(c/ymd-to-date 1996 1 29) (c/ymd-to-date 2000 1 29)
+          (c/ymd-to-date 2004 1 29) (c/ymd-to-date 2008 1 29)])
+      "finds Feb 29 every four years")
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :year, :freq 5, :day-selection :md, :m 6, :d 30}
+           (c/ymd-to-date 1995 0 1)
+           (c/ymd-to-date 1995 0 1)
+           (c/ymd-to-date 2011 0 1))
+         [(c/ymd-to-date 1995 6 30) (c/ymd-to-date 2000 6 30)
+          (c/ymd-to-date 2005 6 30) (c/ymd-to-date 2010 6 30)])
+      "finds a date every 5 years")
+  (is (= (c/recurrent-event-occurrences {:recur-type :year,
+                                         :freq 1,
+                                         :day-selection :occ-dow-month,
+                                         :occ #{0},
+                                         :dow 0,
+                                         :m #{0 1}}
+                                        (c/ymd-to-date 2020 0 1)
+                                        (c/ymd-to-date 2020 0 1)
+                                        (c/ymd-to-date 2022 0 1))
+         [(c/ymd-to-date 2020 0 5) (c/ymd-to-date 2020 1 2)
+          (c/ymd-to-date 2021 0 3) (c/ymd-to-date 2021 1 7)])))
