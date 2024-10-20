@@ -41,28 +41,32 @@
   (is (= (c/actual-start (c/ymd-to-date 2024 9 11)) (c/ymd-to-date 2024 9 6)))
   (is (= (c/actual-start (c/ymd-to-date 2024 0 1)) (c/ymd-to-date 2023 11 31))))
 
-(deftest nd-weekday-of-month
-  (is (= (:d (c/nd-weekday-of-month 0 0 9 2024)) 6))
-  (is (= (:d (c/nd-weekday-of-month 0 1 9 2024)) 7))
-  (is (= (:d (c/nd-weekday-of-month 0 2 9 2024)) 1))
-  (is (= (:d (c/nd-weekday-of-month 0 3 9 2024)) 2))
-  (is (= (:d (c/nd-weekday-of-month 0 4 9 2024)) 3))
-  (is (= (:d (c/nd-weekday-of-month 0 5 9 2024)) 4))
-  (is (= (:d (c/nd-weekday-of-month 0 6 9 2024)) 5))
-  (is (= (:d (c/nd-weekday-of-month 1 0 9 2024)) 13))
-  (is (= (:d (c/nd-weekday-of-month 1 1 9 2024)) 14))
-  (is (= (:d (c/nd-weekday-of-month 1 2 9 2024)) 8))
-  (is (= (:d (c/nd-weekday-of-month 2 2 9 2024)) 15))
-  (is (= (:d (c/nd-weekday-of-month 3 2 9 2024)) 22))
-  (is (= (:d (c/nd-weekday-of-month 4 2 9 2024)) 29))
-  (is (nil? (c/nd-weekday-of-month 5 2 9 2024)) "occurrence out of bounds")
-  (is (= (:d (c/nd-weekday-of-month 4 9 9 2024)) 29))
-  (is (= (:d (c/nd-weekday-of-month -1 2 9 2024)) 29))
-  (is (= (:d (c/nd-weekday-of-month -2 2 9 2024)) 22))
-  (is (= (:d (c/nd-weekday-of-month -3 2 9 2024)) 15))
-  (is (= (:d (c/nd-weekday-of-month -4 2 9 2024)) 8))
-  (is (= (:d (c/nd-weekday-of-month -5 2 9 2024)) 1))
-  (is (nil? (c/nd-weekday-of-month -6 2 9 2024))
+(deftest all-nd-weekday-of-month
+  (is (= (c/all-nd-weekdays-of-month [0] 0 9 2024) [(c/ymd-to-date 2024 9 6)]))
+  (is (= (c/all-nd-weekdays-of-month [0] 1 9 2024) [(c/ymd-to-date 2024 9 7)]))
+  (is (= (c/all-nd-weekdays-of-month [0] 2 9 2024) [(c/ymd-to-date 2024 9 1)]))
+  (is (= (c/all-nd-weekdays-of-month [0] 3 9 2024) [(c/ymd-to-date 2024 9 2)]))
+  (is (= (c/all-nd-weekdays-of-month [0] 4 9 2024) [(c/ymd-to-date 2024 9 3)]))
+  (is (= (c/all-nd-weekdays-of-month [0] 5 9 2024) [(c/ymd-to-date 2024 9 4)]))
+  (is (= (c/all-nd-weekdays-of-month [0] 6 9 2024) [(c/ymd-to-date 2024 9 5)]))
+  (is (= (c/all-nd-weekdays-of-month [1] 0 9 2024) [(c/ymd-to-date 2024 9 13)]))
+  (is (= (c/all-nd-weekdays-of-month [1] 1 9 2024) [(c/ymd-to-date 2024 9 14)]))
+  (is (= (c/all-nd-weekdays-of-month [1] 2 9 2024) [(c/ymd-to-date 2024 9 8)]))
+  (is (= (c/all-nd-weekdays-of-month [2] 2 9 2024) [(c/ymd-to-date 2024 9 15)]))
+  (is (= (c/all-nd-weekdays-of-month [3] 2 9 2024) [(c/ymd-to-date 2024 9 22)]))
+  (is (= (c/all-nd-weekdays-of-month [4] 2 9 2024) [(c/ymd-to-date 2024 9 29)]))
+  (is (empty? (c/all-nd-weekdays-of-month [5] 2 9 2024))
+      "occurrence out of bounds")
+  (is (= (c/all-nd-weekdays-of-month [4] 9 9 2024) [(c/ymd-to-date 2024 9 29)]))
+  (is (= (c/all-nd-weekdays-of-month [-1] 2 9 2024)
+         [(c/ymd-to-date 2024 9 29)]))
+  (is (= (c/all-nd-weekdays-of-month [-2] 2 9 2024)
+         [(c/ymd-to-date 2024 9 22)]))
+  (is (= (c/all-nd-weekdays-of-month [-3] 2 9 2024)
+         [(c/ymd-to-date 2024 9 15)]))
+  (is (= (c/all-nd-weekdays-of-month [-4] 2 9 2024) [(c/ymd-to-date 2024 9 8)]))
+  (is (= (c/all-nd-weekdays-of-month [-5] 2 9 2024) [(c/ymd-to-date 2024 9 1)]))
+  (is (empty? (c/all-nd-weekdays-of-month [-6] 2 9 2024))
       "negative occurrence out of bounds"))
 
 (deftest load-state
@@ -532,3 +536,35 @@
                                         (c/ymd-to-date 2022 0 1))
          [(c/ymd-to-date 2020 0 5) (c/ymd-to-date 2020 1 2)
           (c/ymd-to-date 2021 0 3) (c/ymd-to-date 2021 1 7)])))
+
+(def example-events
+  [{:name "2023 New Year", :single-occ (c/ymd-to-date 2023 0 1)}
+   {:name "2024 New Year", :single-occ (c/ymd-to-date 2024 0 1)}
+   {:name "New Year",
+    :recurring {:recur-type :year, :freq 1, :day-selection :md, :m 0, :d 1}}
+   {:name "Good Day",
+    :recurring {:recur-type :year, :freq 1, :day-selection :md, :m 1, :d 1}}
+   {:name "Very Good Day",
+    :recurring {:recur-type :year,
+                :freq 1,
+                :day-selection :occ-dow-month,
+                :m #{0},
+                :dow 0,
+                :occ #{1 3}}}])
+
+(deftest get-visible-events
+  (is (= (c/get-visible-events (c/ymd-to-date 2024 0 1)
+                               (c/ymd-to-date 2024 1 1)
+                               example-events)
+         [[(c/ymd-to-date 2024 0 1) "2024 New Year"]
+          [(c/ymd-to-date 2024 0 1) "New Year"]
+          [(c/ymd-to-date 2024 0 14) "Very Good Day"]
+          [(c/ymd-to-date 2024 0 28) "Very Good Day"]])))
+
+(deftest get-days-with-events
+  (is (= (c/get-days-with-events (c/ymd-to-date 2024 0 1)
+                                 (c/ymd-to-date 2024 1 1)
+                                 example-events)
+         {(c/ymd-to-date 2024 0 1) ["2024 New Year" "New Year"],
+          (c/ymd-to-date 2024 0 14) ["Very Good Day"],
+          (c/ymd-to-date 2024 0 28) ["Very Good Day"]})))

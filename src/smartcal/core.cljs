@@ -103,6 +103,8 @@
         d (inc remaining-days)]
     (Date. y m d (mod (+ 6 day-num) 7) day-num)))
 
+(def epoch (day-num-to-date 0))
+
 (defn month-num
   "Calculate the ordinal for a particular month from the epoch (1600)."
   [date]
@@ -171,11 +173,6 @@
          (map #(get-neg all-dows %))
          (filter identity)
          (sort-by :d))))
-
-(defn nd-weekday-of-month
-  "Deprecated."
-  [occurrence day-of-week m y]
-  (first (all-nd-weekdays-of-month [occurrence] day-of-week m y)))
 
 (defn select-dates-from-month-recur
   "Select days from a monthly recurring pattern according to :day-selection."
@@ -269,25 +266,36 @@
                       (take-while #(< (:daynum %) actual-end-daynum)
                                   all-days))))))
 
-(defn us-bank-holiday
-  "Returns whether a day is a U.S. bank holiday. If so, return its name. Otherwise return nil."
-  [{:keys [y m d], :as date}]
-  (cond (and (= m 0) (= d 1)) "New Year's Day"
-        (and (= m 0) (= date (nd-weekday-of-month 2 1 m y)))
-          "Martin Luther King Jr. Day"
-        (and (= m 1) (= date (nd-weekday-of-month 2 1 m y))) "Presidents' Day"
-        (and (= m 4) (= date (nd-weekday-of-month -1 1 m y))) "Memorial Day"
-        (and (= m 5) (= d 19)) "Juneteenth"
-        (and (= m 6) (= d 4)) "Independence Day"
-        (and (= m 8) (= date (nd-weekday-of-month 0 1 m y))) "Labor Day"
-        (and (= m 9) (= date (nd-weekday-of-month 1 1 m y))) "Columbus Day"
-        (and (= m 10) (= d 11)) "Veterans Day"
-        (and (= m 10) (= date (nd-weekday-of-month 3 4 m y))) "Thanksgiving Day"
-        (and (= m 11) (= d 25)) "Christmas Day"))
-
 (defn add-event
-  [name {:keys [y m d]} events]
-  (update-in events [y m d] #(conj % name)))
+  [name date-spec events]
+  (let [modified-date-spec
+          (if (and (:recurring date-spec)
+                   (nil? (:recur-start (:recurring date-spec))))
+            (assoc-in date-spec [:recurring :recur-start] (today))
+            date-spec)]
+    (conj events (assoc modified-date-spec :name name))))
+
+(defn get-visible-events
+  "Determine which events are visible in the current view, given the boundaries of
+  the current view and all available events. Return a sequence of [date, event]."
+  [from until events]
+  (mapcat (fn [ev]
+            (if-let [single-occ (:single-occ ev)]
+              (if (and (>= (:daynum single-occ) (:daynum from))
+                       (< (:daynum single-occ) (:daynum until)))
+                [[single-occ (:name ev)]]
+                nil)
+              (if-let [recur-pat (:recurring ev)]
+                (map #(vector % (:name ev))
+                  (recurrent-event-occurrences recur-pat epoch from until)))))
+    events))
+
+(defn get-days-with-events
+  "Similar to get-visible-events except that the result is a map from date to a seq of events."
+  [from until events]
+  (reduce (fn [rv [date ev]] (update rv date #(if % (conj % ev) [ev])))
+    {}
+    (get-visible-events from until events)))
 
 ;; -------------------------
 ;; State
@@ -352,12 +360,30 @@
 
 (def cmdline-output (r/atom ""))
 
-;; Currenty we just have a map from year to a map from month to a map from day
-;; to a vec of event names. TODO: we really ought to have a custom structure
-;; that directly supports assoc-in, get-in, and update-in passing {:y :m :d}.
-;; TODO we also need a record for events. TODO we need to store this in
-;; localStorage.
-(def user-defined-events (r/atom {}))
+(def us-bank-holidays
+  (mapv #(-> %
+             (assoc-in [:recurring :recur-start] epoch)
+             (assoc-in [:recurring :recur-type] :year)
+             (assoc-in [:recurring :freq] 1))
+    [{:name "New Year's Day", :recurring {:day-selection :md, :m 0, :d 1}}
+     {:name "Martin Luther King Jr. Day",
+      :recurring {:day-selection :occ-dow-month, :occ #{2}, :dow 1, :m #{0}}}
+     {:name "Presidents' Day",
+      :recurring {:day-selection :occ-dow-month, :occ #{2}, :dow 1, :m #{1}}}
+     {:name "Memorial Day",
+      :recurring {:day-selection :occ-dow-month, :occ #{-1}, :dow 1, :m #{4}}}
+     {:name "Juneteenth", :recurring {:day-selection :md, :m 5, :d 19}}
+     {:name "Independence Day", :recurring {:day-selection :md, :m 6, :d 4}}
+     {:name "Labor Day",
+      :recurring {:day-selection :occ-dow-month, :occ #{0}, :dow 1, :m #{8}}}
+     {:name "Columbus Day",
+      :recurring {:day-selection :occ-dow-month, :occ #{1}, :dow 1, :m #{9}}}
+     {:name "Veterans Day", :recurring {:day-selection :md, :m 10, :d 11}}
+     {:name "Thanksgiving Day",
+      :recurring {:day-selection :occ-dow-month, :occ #{3}, :dow 4, :m #{10}}}
+     {:name "Christmas Day", :recurring {:day-selection :md, :m 11, :d 25}}]))
+
+(def events (r/atom us-bank-holidays))
 
 ;; -------------------------
 ;; Control language
@@ -481,18 +507,15 @@
 ;; Components
 
 (defn day-component
-  [{:keys [y m d], :as ymd} show-complete]
+  [{:keys [y m d], :as ymd} show-complete events-on-this-date]
   [:div.td
    [:p.daynum
     (str (if (or show-complete (= 1 d)) (str (get month-names m) " "))
          d
          (if (or show-complete (and (= 1 d) (= 0 m))) (str ", " y)))]
-   (let [user-events (get-in @user-defined-events [y m d] [])
-         all-events (if-let [bank-hol (us-bank-holiday ymd)]
-                      (conj user-events bank-hol)
-                      user-events)
-         all-events-sorted (sort-by identity gstr/intAwareCompare all-events)]
-     (into [:ul.events] (map #(vector :li %) all-events-sorted)))])
+   (let [events-sorted
+           (sort-by identity gstr/intAwareCompare events-on-this-date)]
+     (into [:ul.events] (map #(vector :li %) events-sorted)))])
 
 (def cmdline-prompt ">>> ")
 
@@ -519,8 +542,8 @@
         [:cmd [:prev-cmd n]] (swap! start-date #(prev-week (js/parseInt n 10)
                                                            %))
         [:cmd [:goto-cmd ymd]] (reset! start-date ymd)
-        [:cmd [:add-cmd name [:single-occ ymd]]] (swap! user-defined-events
-                                                   #(add-event name ymd %))
+        [:cmd [:add-cmd name date-spec]]
+          (swap! events #(add-event name (into {} [date-spec]) %))
         :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
 
 (defn explain-input-component
@@ -646,10 +669,13 @@
                (str "30px repeat(" @weeks-to-show ", minmax(5rem, 1fr))")}}
     [:div.td.th "Sun"] [:div.td.th "Mon"] [:div.td.th "Tue"] [:div.td.th "Wed"]
     [:div.td.th "Thu"] [:div.td.th "Fri"] [:div.td.th "Sat"]
-    (let [start (actual-start @start-date)]
+    (let [start (actual-start @start-date)
+          until (day-num-to-date (+ (* 7 @weeks-to-show) (:daynum start)))
+          days-with-events (get-days-with-events start until @events)]
       (doall (for [x (range (* 7 @weeks-to-show))]
                (let [date (day-num-to-date (+ x (:daynum start)))]
-                 ^{:key (:daynum date)} [day-component date (= x 0)]))))]
+                 ^{:key (:daynum date)}
+                 [day-component date (= x 0) (get days-with-events date)]))))]
    [:div#cmdline-inout [cmdline-output-component] [cmdline-component]]])
 
 (defn home-page [] [calendar-component])
