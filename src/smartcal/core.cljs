@@ -12,11 +12,11 @@
 
 (defrecord Date [y m d weekday daynum])
 
-(defn- adjust-month
+(defn adjust-month
   [y m]
   (assert (>= y 1600))
   (assert (>= m 0))
-  (if (>= m 12) [(+ y (quot m 12)) (mod m 12)] [y m]))
+  [(+ y (quot m 12)) (mod m 12)])
 
 (defn ymd-to-day-num
   [y m d]
@@ -103,6 +103,11 @@
         d (inc remaining-days)]
     (Date. y m d (mod (+ 6 day-num) 7) day-num)))
 
+(defn month-num
+  "Calculate the ordinal for a particular month from the epoch (1600)."
+  [date]
+  (+ (* 12 (- (:y date) 1600)) (:m date)))
+
 (defn ymd-to-date [y m d] (day-num-to-date (ymd-to-day-num y m d)))
 
 (defn ymd-map-to-date
@@ -144,17 +149,40 @@
   [start dow]
   (+ (:daynum start) (mod (- dow (:weekday start)) 7)))
 
-(defn nd-weekday-of-month
-  [occurrence day-of-week m y]
+(defn weekdays-of-month
+  [day-of-week m y]
   (let [day-1 (ymd-to-date y m 1)
         first-occurrence-day-num (soonest-day-of-week day-1 day-of-week)
         all-occurrences-days-num (take-while
-                                   #(= m (:m (day-num-to-date %)))
+                                   #(== (:m day-1) (:m (day-num-to-date %)))
                                    (iterate #(+ 7 %) first-occurrence-day-num))]
-    (:d (day-num-to-date (if (>= occurrence 0)
-                           (nth all-occurrences-days-num occurrence)
-                           (nth (reverse all-occurrences-days-num)
-                                (- -1 occurrence)))))))
+    (map day-num-to-date all-occurrences-days-num)))
+
+(defn nd-weekday-of-month
+  "Deprecated in favor of select-dates-from-month-recur."
+  [occurrence day-of-week m y]
+  (let [all-dates (weekdays-of-month day-of-week m y)]
+    (if (>= occurrence 0)
+      (nth all-dates occurrence nil)
+      (nth (reverse all-dates) (- -1 occurrence) nil))))
+
+(defn select-dates-from-month-recur
+  "Select days from a monthly recurring pattern according to :day-selection."
+  [recur-pat monthnum]
+  (case (:day-selection recur-pat)
+    :d (filter identity
+         (map #(let [date (ymd-to-date 1600 monthnum %)]
+                 ;; Need to filter away non-exist dates such as Feb 31
+                 ;; instead of wrapping.
+                 (if (= (:d date) %) date nil))
+           (sort (:d recur-pat))))
+    :dow (let [all-days (weekdays-of-month (:dow recur-pat) monthnum 1600)]
+           (sort-by :d
+                    (filter identity
+                      (map #(if (>= % 0)
+                              (nth all-days % nil)
+                              (nth (reverse all-days) (- -1 %) nil))
+                        (:occ recur-pat)))))))
 
 (defn recurrent-event-occurrences
   [recur-pat default-recur-start query-start query-end]
@@ -179,22 +207,47 @@
                                                   actual-start-daynum
                                                   actual-end-daynum)
                                          first-week-occurrences-daynum))]
-              (map day-num-to-date result-daynums)))))
+              (map day-num-to-date result-daynums))
+      :month
+        ;; The semantics of determining the first occurrence is slightly
+        ;; different from "week" mode: in week mode, we always start by
+        ;; finding the soonest days matching the dow (which may be in the
+        ;; following week); here, we always start from the current month.
+        ;; The difference is deliberate since people have a stronger
+        ;; conception of the month but not the week.
+        (let [monthnum-divisor (:freq recur-pat)
+              monthnum-recur-start (month-num recur-start)
+              actual-start-monthnum (max (month-num query-start)
+                                         monthnum-recur-start)
+              actual-end-monthnum
+                (inc (if-let [recur-end (get recur-pat :recur-end)]
+                       (min (month-num recur-end) (month-num query-end))
+                       (month-num query-end)))
+              selected-months (modulo-remainder-seq monthnum-divisor
+                                                    monthnum-recur-start
+                                                    (max (month-num query-start)
+                                                         monthnum-recur-start)
+                                                    (inc (month-num query-end)))
+              all-days (mapcat #(select-dates-from-month-recur recur-pat %)
+                         selected-months)]
+          (drop-while #(< (:daynum %) (:daynum query-start))
+                      (take-while #(< (:daynum %) (:daynum query-end))
+                                  all-days))))))
 
 (defn us-bank-holiday
   "Returns whether a day is a U.S. bank holiday. If so, return its name. Otherwise return nil."
-  [{:keys [y m d]}]
+  [{:keys [y m d], :as date}]
   (cond (and (= m 0) (= d 1)) "New Year's Day"
-        (and (= m 0) (= d (nd-weekday-of-month 2 1 m y)))
+        (and (= m 0) (= date (nd-weekday-of-month 2 1 m y)))
           "Martin Luther King Jr. Day"
-        (and (= m 1) (= d (nd-weekday-of-month 2 1 m y))) "Presidents' Day"
-        (and (= m 4) (= d (nd-weekday-of-month -1 1 m y))) "Memorial Day"
+        (and (= m 1) (= date (nd-weekday-of-month 2 1 m y))) "Presidents' Day"
+        (and (= m 4) (= date (nd-weekday-of-month -1 1 m y))) "Memorial Day"
         (and (= m 5) (= d 19)) "Juneteenth"
         (and (= m 6) (= d 4)) "Independence Day"
-        (and (= m 8) (= d (nd-weekday-of-month 0 1 m y))) "Labor Day"
-        (and (= m 9) (= d (nd-weekday-of-month 1 1 m y))) "Columbus Day"
+        (and (= m 8) (= date (nd-weekday-of-month 0 1 m y))) "Labor Day"
+        (and (= m 9) (= date (nd-weekday-of-month 1 1 m y))) "Columbus Day"
         (and (= m 10) (= d 11)) "Veterans Day"
-        (and (= m 10) (= d (nd-weekday-of-month 3 4 m y))) "Thanksgiving Day"
+        (and (= m 10) (= date (nd-weekday-of-month 3 4 m y))) "Thanksgiving Day"
         (and (= m 11) (= d 25)) "Christmas Day"))
 
 (defn add-event

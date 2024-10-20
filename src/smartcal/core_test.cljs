@@ -24,6 +24,12 @@
   (is (= (c/day-num-to-date 154954) (c/Date. 2024 3 1 1 154954)))
   (is (= (c/day-num-to-date 155137) (c/Date. 2024 9 1 2 155137))))
 
+(deftest month-num
+  (is (= (c/month-num (c/ymd-to-date 1600 0 1)) 0))
+  (is (= (c/month-num (c/ymd-to-date 1600 1 1)) 1))
+  (is (= (c/month-num (c/ymd-to-date 1601 0 1)) 12))
+  (is (= (c/month-num (c/ymd-to-date 1602 1 1)) 25)))
+
 (deftest today
   ;; Please don't run this test near midnight.
   (is (= (:y (c/today)) (.getFullYear (js/Date.))))
@@ -36,28 +42,27 @@
   (is (= (c/actual-start (c/ymd-to-date 2024 0 1)) (c/ymd-to-date 2023 11 31))))
 
 (deftest nd-weekday-of-month
-  (is (= (c/nd-weekday-of-month 0 0 9 2024) 6))
-  (is (= (c/nd-weekday-of-month 0 1 9 2024) 7))
-  (is (= (c/nd-weekday-of-month 0 2 9 2024) 1))
-  (is (= (c/nd-weekday-of-month 0 3 9 2024) 2))
-  (is (= (c/nd-weekday-of-month 0 4 9 2024) 3))
-  (is (= (c/nd-weekday-of-month 0 5 9 2024) 4))
-  (is (= (c/nd-weekday-of-month 0 6 9 2024) 5))
-  (is (= (c/nd-weekday-of-month 1 0 9 2024) 13))
-  (is (= (c/nd-weekday-of-month 1 1 9 2024) 14))
-  (is (= (c/nd-weekday-of-month 1 2 9 2024) 8))
-  (is (= (c/nd-weekday-of-month 2 2 9 2024) 15))
-  (is (= (c/nd-weekday-of-month 3 2 9 2024) 22))
-  (is (= (c/nd-weekday-of-month 4 2 9 2024) 29))
-  (is (thrown? js/Error (c/nd-weekday-of-month 5 2 9 2024))
-      "occurrence out of bounds")
-  (is (= (c/nd-weekday-of-month 4 9 9 2024) 29))
-  (is (= (c/nd-weekday-of-month -1 2 9 2024) 29))
-  (is (= (c/nd-weekday-of-month -2 2 9 2024) 22))
-  (is (= (c/nd-weekday-of-month -3 2 9 2024) 15))
-  (is (= (c/nd-weekday-of-month -4 2 9 2024) 8))
-  (is (= (c/nd-weekday-of-month -5 2 9 2024) 1))
-  (is (thrown? js/Error (c/nd-weekday-of-month -6 2 9 2024))
+  (is (= (:d (c/nd-weekday-of-month 0 0 9 2024)) 6))
+  (is (= (:d (c/nd-weekday-of-month 0 1 9 2024)) 7))
+  (is (= (:d (c/nd-weekday-of-month 0 2 9 2024)) 1))
+  (is (= (:d (c/nd-weekday-of-month 0 3 9 2024)) 2))
+  (is (= (:d (c/nd-weekday-of-month 0 4 9 2024)) 3))
+  (is (= (:d (c/nd-weekday-of-month 0 5 9 2024)) 4))
+  (is (= (:d (c/nd-weekday-of-month 0 6 9 2024)) 5))
+  (is (= (:d (c/nd-weekday-of-month 1 0 9 2024)) 13))
+  (is (= (:d (c/nd-weekday-of-month 1 1 9 2024)) 14))
+  (is (= (:d (c/nd-weekday-of-month 1 2 9 2024)) 8))
+  (is (= (:d (c/nd-weekday-of-month 2 2 9 2024)) 15))
+  (is (= (:d (c/nd-weekday-of-month 3 2 9 2024)) 22))
+  (is (= (:d (c/nd-weekday-of-month 4 2 9 2024)) 29))
+  (is (nil? (c/nd-weekday-of-month 5 2 9 2024)) "occurrence out of bounds")
+  (is (= (:d (c/nd-weekday-of-month 4 9 9 2024)) 29))
+  (is (= (:d (c/nd-weekday-of-month -1 2 9 2024)) 29))
+  (is (= (:d (c/nd-weekday-of-month -2 2 9 2024)) 22))
+  (is (= (:d (c/nd-weekday-of-month -3 2 9 2024)) 15))
+  (is (= (:d (c/nd-weekday-of-month -4 2 9 2024)) 8))
+  (is (= (:d (c/nd-weekday-of-month -5 2 9 2024)) 1))
+  (is (nil? (c/nd-weekday-of-month -6 2 9 2024))
       "negative occurrence out of bounds"))
 
 (deftest load-state
@@ -359,4 +364,102 @@
            (c/ymd-to-date 2020 0 1)
            (c/ymd-to-date 2024 0 20))
          [(c/ymd-to-date 2024 0 5) (c/ymd-to-date 2024 0 8)
-          (c/ymd-to-date 2024 0 19)])))
+          (c/ymd-to-date 2024 0 19)]))
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :month, :freq 1, :day-selection :d, :d #{1}}
+           (c/ymd-to-date 2024 0 1)
+           (c/ymd-to-date 2020 0 1)
+           (c/ymd-to-date 2024 5 1))
+         [(c/ymd-to-date 2024 0 1) (c/ymd-to-date 2024 1 1)
+          (c/ymd-to-date 2024 2 1) (c/ymd-to-date 2024 3 1)
+          (c/ymd-to-date 2024 4 1)]))
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :month, :freq 2, :day-selection :d, :d #{1}}
+           (c/ymd-to-date 2024 0 1)
+           (c/ymd-to-date 2020 0 1)
+           (c/ymd-to-date 2024 5 2))
+         [(c/ymd-to-date 2024 0 1) (c/ymd-to-date 2024 2 1)
+          (c/ymd-to-date 2024 4 1)]))
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :month, :freq 3, :day-selection :d, :d #{8 18 28}}
+           (c/ymd-to-date 2024 0 1)
+           (c/ymd-to-date 2020 0 1)
+           (c/ymd-to-date 2024 7 1))
+         [(c/ymd-to-date 2024 0 8) (c/ymd-to-date 2024 0 18)
+          (c/ymd-to-date 2024 0 28) (c/ymd-to-date 2024 3 8)
+          (c/ymd-to-date 2024 3 18) (c/ymd-to-date 2024 3 28)
+          (c/ymd-to-date 2024 6 8) (c/ymd-to-date 2024 6 18)
+          (c/ymd-to-date 2024 6 28)]))
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :month, :freq 1, :day-selection :d, :d #{31}}
+           (c/ymd-to-date 2024 0 1)
+           (c/ymd-to-date 2020 0 1)
+           (c/ymd-to-date 2025 0 1))
+         [(c/ymd-to-date 2024 0 31) (c/ymd-to-date 2024 2 31)
+          (c/ymd-to-date 2024 4 31) (c/ymd-to-date 2024 6 31)
+          (c/ymd-to-date 2024 7 31) (c/ymd-to-date 2024 9 31)
+          (c/ymd-to-date 2024 11 31)])
+      "skips over non-existent 31st days")
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :month, :freq 2, :day-selection :d, :d #{31}}
+           (c/ymd-to-date 2024 0 1)
+           (c/ymd-to-date 2020 0 1)
+           (c/ymd-to-date 2025 0 1))
+         [(c/ymd-to-date 2024 0 31) (c/ymd-to-date 2024 2 31)
+          (c/ymd-to-date 2024 4 31) (c/ymd-to-date 2024 6 31)])
+      "skips over non-existent 31st days and also every second month")
+  (is (= (c/select-dates-from-month-recur
+           {:day-selection :dow, :dow 1, :occ #{0}}
+           (c/month-num {:y 2024, :m 0}))
+         [(c/ymd-to-date 2024 0 1)]))
+  (is (= (c/recurrent-event-occurrences
+           {:recur-type :month, :freq 1, :day-selection :dow, :dow 1, :occ #{0}}
+           (c/ymd-to-date 2024 0 1)
+           (c/ymd-to-date 2020 0 1)
+           (c/ymd-to-date 2024 6 1))
+         [(c/ymd-to-date 2024 0 1) (c/ymd-to-date 2024 1 5)
+          (c/ymd-to-date 2024 2 4) (c/ymd-to-date 2024 3 1)
+          (c/ymd-to-date 2024 4 6) (c/ymd-to-date 2024 5 3)])
+      "finds first Monday of each month")
+  (is (= (c/recurrent-event-occurrences {:recur-type :month,
+                                         :freq 1,
+                                         :day-selection :dow,
+                                         :dow 1,
+                                         :occ #{0 -1}}
+                                        (c/ymd-to-date 2024 0 1)
+                                        (c/ymd-to-date 2020 0 1)
+                                        (c/ymd-to-date 2024 3 1))
+         [(c/ymd-to-date 2024 0 1) (c/ymd-to-date 2024 0 29)
+          (c/ymd-to-date 2024 1 5) (c/ymd-to-date 2024 1 26)
+          (c/ymd-to-date 2024 2 4) (c/ymd-to-date 2024 2 25)])
+      "finds first and last Monday of each month")
+  (is
+    (= (c/recurrent-event-occurrences
+         {:recur-type :month, :freq 1, :day-selection :dow, :dow 1, :occ #{0 4}}
+         (c/ymd-to-date 2024 0 1)
+         (c/ymd-to-date 2020 0 1)
+         (c/ymd-to-date 2024 4 1))
+       [(c/ymd-to-date 2024 0 1) (c/ymd-to-date 2024 0 29)
+        (c/ymd-to-date 2024 1 5) (c/ymd-to-date 2024 2 4)
+        (c/ymd-to-date 2024 3 1) (c/ymd-to-date 2024 3 29)])
+    "finds first and fifth Monday of each month")
+  (is
+    (= (c/recurrent-event-occurrences
+         {:recur-type :month, :freq 2, :day-selection :dow, :dow 1, :occ #{0 4}}
+         (c/ymd-to-date 2024 0 1)
+         (c/ymd-to-date 2020 0 1)
+         (c/ymd-to-date 2024 6 30))
+       [(c/ymd-to-date 2024 0 1) (c/ymd-to-date 2024 0 29)
+        (c/ymd-to-date 2024 2 4) (c/ymd-to-date 2024 4 6)
+        (c/ymd-to-date 2024 6 1) (c/ymd-to-date 2024 6 29)])
+    "finds first and fifth Monday of every 2 months")
+  (is
+    (= (c/recurrent-event-occurrences
+         {:recur-type :month, :freq 13, :day-selection :dow, :dow 0, :occ #{-1}}
+         (c/ymd-to-date 2020 0 1)
+         (c/ymd-to-date 2020 0 1)
+         (c/ymd-to-date 2024 6 30))
+       [(c/ymd-to-date 2020 0 26) (c/ymd-to-date 2021 1 28)
+        (c/ymd-to-date 2022 2 27) (c/ymd-to-date 2023 3 30)
+        (c/ymd-to-date 2024 4 26)])
+    "finds last Sunday every 13 months"))
