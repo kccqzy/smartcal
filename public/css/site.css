@@ -38,9 +38,9 @@ div#table {
     overflow-y: auto;
     grid-template-columns: repeat(7, 1fr);
     border-top: solid 2px #333;
-    border-bottom: solid 2px #333;
+    border-bottom: solid 3px #333;
     margin: 1em 0;
-    text-align: right;
+    padding: 0 0.3em;
 }
 
 div#table > .td {
@@ -48,8 +48,14 @@ div#table > .td {
     padding: 0.2em 0;
 }
 
-.td.weekend {
-    color: rgba(51, 51, 51, 0.4);
+div#table > .td:nth-last-child(1),
+div#table > .td:nth-last-child(2),
+div#table > .td:nth-last-child(3),
+div#table > .td:nth-last-child(4),
+div#table > .td:nth-last-child(5),
+div#table > .td:nth-last-child(6),
+div#table > .td:nth-last-child(7) {
+    border-bottom: none;
 }
 
 div#table > .th {
