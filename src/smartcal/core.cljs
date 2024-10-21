@@ -276,6 +276,11 @@
             date-spec)]
     (conj events (assoc modified-date-spec :name name))))
 
+(defn remove-events
+  "Remove events by name."
+  [name events]
+  (filterv #(not= (:name %) name) events))
+
 (defn get-visible-events
   "Determine which events are visible in the current view, given the boundaries of
   the current view and all available events. Return a map with :date :event."
@@ -496,15 +501,15 @@
 
 (defparser
   cmdline-parser
-  "cmd = <ws?> (help-cmd | add-cmd | display-cmd | next-cmd | prev-cmd | today-cmd | goto-cmd) <ws?>
+  "cmd = <ws?> (help-cmd | add-cmd | display-cmd | next-cmd | prev-cmd | rm-cmd | goto-cmd) <ws?>
    <ws> = #' +'
    help-cmd = <'help'>
    add-cmd = <'add' (ws 'event')? ws> str-lit <ws> (single-occ | recurring)
    display-cmd = 'display' ws 'week' ws int-lit
    next-cmd = <('next' | 'n')> (<ws> int-lit)?
    prev-cmd = <('prev' | 'p')> (<ws> int-lit)?
-   today-cmd = <'today'>
    goto-cmd = <'goto' ws> date-lit
+   rm-cmd = <('rm' | 'remove' | 'del' | 'delete') ws> str-lit
    <str-lit> = <'\"'>  #'[^\"]*' <'\"'>
    <int-lit> = #'[0-9]+'
    single-occ = <('on' ws)?> date-lit
@@ -640,6 +645,13 @@
         [:cmd [:goto-cmd ymd]] (reset! start-date ymd)
         [:cmd [:add-cmd name date-spec]]
           (swap! events #(add-event name date-spec %))
+        [:cmd [:rm-cmd name]]
+          (let [[old new] (swap-vals! events #(remove-events name %))
+                removals (- (count old) (count new))]
+            (reset! cmdline-output (str "Removed "
+                                        (if (== 1 removals)
+                                          "one event."
+                                          (str removals " events.")))))
         :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
 
 (defn explain-input-component
@@ -654,6 +666,7 @@
         [:cmd [:goto-cmd date]] (str "Go to date " (format-date-en-us date))
         [:cmd [:add-cmd name occ]] (str "Add "
                                         (format-event name occ start until))
+        [:cmd [:rm-cmd name]] (str "Remove events named \"" name "\"")
         :else (pr-str parsed)))))
 
 (defn cmdline-component
