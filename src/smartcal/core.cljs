@@ -469,7 +469,11 @@
 
 (def cmdline-input (r/atom ""))
 
-(def cmdline-output (r/atom ""))
+(def cmdline-output (r/atom "Welcome to smartcal. Type \"help\" for help."))
+
+;; This defines what kind of content the modal is showing. It may be nil or
+;; :help.
+(def modal-content (r/atom nil))
 
 (def us-bank-holidays
   (mapv #(-> %
@@ -547,7 +551,6 @@
    <md-lit>
      = (mmm-lit | mmmm-lit) <ws> d-lit
      | d-lit <ws> (mmm-lit | mmmm-lit)
-     | mm-lit dd-lit
    yyyy-lit = #'19[0-9][0-9]|20[0-9][0-9]'
    mm-lit = #'0[1-9]|1[0-2]'
    dd-lit = #'0[1-9]|1[0-9]|2[0-9]|3[01]'
@@ -629,30 +632,100 @@
                     (vector? %) [cmdline-display-component %])
           remaining)))
 
+(defn help-modal-component
+  []
+  [:<>
+   [:p
+    "This is a smart calendar app that runs completely in your browser. It is
+    controlled by typing commands into the command area at the bottom."]
+   [:h4 "Navigating the calendar"]
+   [:p "Type " [:code "next"] " or " [:code "prev"]
+    " to move the calendar view forward or backward by one week. When followed
+   with an integer, the calendar view is moved by that many weeks. For example "
+    [:code "next 7"] " moves the calendar forward by 7 weeks."]
+   [:p "To go to a specific date, use the " [:code "goto"]
+    " command, followed by a date literal. There are many ways you can specify a
+   date literal. So all of these work: "
+    [:code "goto 20241001"] ", " [:code "goto 2024-10-01"] ", "
+    [:code "goto Oct 1, 2024"] ", " [:code "goto 01 Oct 2024"]
+    ". However you cannot specify the month as a number unless the year is specified first.
+    This is because some put the day before the month, and some after, so a date
+    like 10/01/2024 is inherently ambiguous."]
+   [:h4 "Adding events"]
+   [:p "The " [:code "add"]
+    " command is used to add new events. An event always has a name, which need
+   not be unique. An event can be a single occurrence or a recurring event."]
+   [:p "A single event has its occurrence date specified using the "
+    [:code "on"] " keyword. So "
+    [:code "add \"Celebrate Jack's 60th birthday\" on 20241018"]
+    " creates a single event with that name and on that date."]
+   [:p "A recurring event has its recurrence pattern specified using the "
+    [:code "every"]
+    " keyword, followed by the recurrence period, which may be specified in
+    units of days, weeks, months, or years."]
+   [:p [:em "Day-based recurrence. "] "The command "
+    [:code "add \"Daily reflection\" every day"] " is an example. The command "
+    [:code "add \"Take
+   out the trash\" every 3 days"] " is another example."]
+   [:p [:em "Week-based recurrence. "]
+    "Week-based recurrences are simply day-based recurrences where the period is
+    a multiple of 7. It allows you to specify the days in the first 7 days of
+    that period. The command "
+    [:code "add \"TGIF\" every week on Fri"]
+    " is an example. There may be multiple days specified, so "
+    [:code "add \"Go to the gym\" every week on
+    Mon, Fri"]
+    " creates an event that repeats on Monday and Friday. The command "
+    [:code "add \"Get payslips\" every 2 weeks on Fri"]
+    " sets 14 days as the period of recurrence, so only the first Friday of each
+   period is specified."]
+   [:p [:em "Month-based recurrence. "]
+    "Month-based recurrences specify the period of recurrence in units of
+    months, as well as the selection of a day within a month. The command "
+    [:code "add \"Pay credit card\" every month on 28"]
+    " sets the recurrence period to be one month, and it specifies the 28th day
+    of each selected month. The command "
+    [:code
+     "add \"Review personal finances\" every 2 months on the first Saturday"]
+    " sets the recurrence period to be two
+    months, and in the first month of each period, specifies the first
+    Saturday."]
+   [:p [:em "Year-based recurrence. "]
+    "Year-based recurrences similarly specify the period of recurrence in units
+    of years, as well as the selection of a day within a year. The command "
+    [:code "add \"Celebrate Dad's birthday\" every year on Apr 30"]
+    " is an example. The command "
+    [:code
+     "add \"Pay property tax\" every year on the first Monday of Apr, Dec"]
+    " is another example."]])
+
 (defn execute-input
   [input]
   (reset! cmdline-output "")
-  (let [parsed (transform-parsed-dates (cmdline-parser input))]
-    (if (insta/failure? parsed)
-      (reset! cmdline-output (pr-str parsed))
-      (match parsed
-        [:cmd [:next-cmd]] (swap! start-date next-week)
-        [:cmd [:next-cmd n]] (swap! start-date #(next-week (js/parseInt n 10)
-                                                           %))
-        [:cmd [:prev-cmd]] (swap! start-date prev-week)
-        [:cmd [:prev-cmd n]] (swap! start-date #(prev-week (js/parseInt n 10)
-                                                           %))
-        [:cmd [:goto-cmd ymd]] (reset! start-date ymd)
-        [:cmd [:add-cmd name date-spec]]
-          (swap! events #(add-event name date-spec %))
-        [:cmd [:rm-cmd name]]
-          (let [[old new] (swap-vals! events #(remove-events name %))
-                removals (- (count old) (count new))]
-            (reset! cmdline-output (str "Removed "
-                                        (if (== 1 removals)
-                                          "one event."
-                                          (str removals " events.")))))
-        :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
+  (reset! modal-content nil)
+  (when-not (empty? (.trim input))
+    (let [parsed (transform-parsed-dates (cmdline-parser input))]
+      (if (insta/failure? parsed)
+        (reset! cmdline-output (pr-str parsed))
+        (match parsed
+          [:cmd [:next-cmd]] (swap! start-date next-week)
+          [:cmd [:next-cmd n]] (swap! start-date #(next-week (js/parseInt n 10)
+                                                             %))
+          [:cmd [:prev-cmd]] (swap! start-date prev-week)
+          [:cmd [:prev-cmd n]] (swap! start-date #(prev-week (js/parseInt n 10)
+                                                             %))
+          [:cmd [:goto-cmd ymd]] (reset! start-date ymd)
+          [:cmd [:add-cmd name date-spec]]
+            (swap! events #(add-event name date-spec %))
+          [:cmd [:rm-cmd name]]
+            (let [[old new] (swap-vals! events #(remove-events name %))
+                  removals (- (count old) (count new))]
+              (reset! cmdline-output (str "Removed "
+                                          (if (== 1 removals)
+                                            "one event."
+                                            (str removals " events.")))))
+          [:cmd [:help-cmd]] (reset! modal-content :help)
+          :else (js/window.alert (str "TODO: " (pr-str parsed))))))))
 
 (defn explain-input-component
   [input start until]
@@ -667,6 +740,7 @@
         [:cmd [:add-cmd name occ]] (str "Add "
                                         (format-event name occ start until))
         [:cmd [:rm-cmd name]] (str "Remove events named \"" name "\"")
+        [:cmd [:help-cmd]] "Show help"
         :else (pr-str parsed)))))
 
 (defn cmdline-component
@@ -757,11 +831,17 @@
   [:div#cmdline-out
    (let [o @cmdline-output] (if (seq o) [:pre [:code (.trimEnd o)]]))])
 
+(defn modal-component
+  []
+  (case @modal-content
+    nil [:div#modal.hidden]
+    :help [:div#modal [help-modal-component]]))
+
 (defn calendar-component
   []
   (let [start (actual-start @start-date)
         until (day-num-to-date (+ (* 7 @weeks-to-show) (:daynum start)))]
-    [:div#cal
+    [:div#cal [modal-component]
      [:div#control [:p "Weeks to display: "]
       [:input
        {:type "range",

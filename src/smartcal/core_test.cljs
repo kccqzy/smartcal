@@ -228,14 +228,6 @@
                          :day-selection :md,
                          :m 11,
                          :d 26}}]]]))
-  (is (= (parses "add \"x\" every year on 1226")
-         [[:cmd
-           [:add-cmd "x"
-            {:recurring {:recur-type :year,
-                         :freq 1,
-                         :day-selection :md,
-                         :m 11,
-                         :d 26}}]]]))
   (is (= (parses "add \"x\" every 2 years on 26 Dec")
          [[:cmd
            [:add-cmd "x"
