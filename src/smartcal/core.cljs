@@ -106,6 +106,15 @@
 
 (def epoch (day-num-to-date 0))
 
+(def user-date-min (ymd-to-day-num 1900 0 1))
+
+(def user-date-max (ymd-to-day-num 2099 11 31))
+
+(defn is-daynum-within-limit?
+  "We try to restrict user-visible dates to be within this range."
+  [daynum]
+  (and (>= daynum user-date-min) (<= daynum user-date-max)))
+
 (defn month-num
   "Calculate the ordinal for a particular month from the epoch (1600)."
   [date]
@@ -116,6 +125,15 @@
 (defn ymd-map-to-date
   [{:keys [y m d]}]
   (day-num-to-date (ymd-to-day-num y m d)))
+
+(defn ymd-map-to-date-checked
+  "A version of ymd-map-to-date that performs checks to ensure the date range is
+  within user limits."
+  [{:keys [y m d]}]
+  (let [dn (ymd-to-day-num y m d)]
+    (if (is-daynum-within-limit? dn)
+      (day-num-to-date dn)
+      (throw {:date-outside-range dn}))))
 
 (defn today
   []
