@@ -166,7 +166,13 @@ div#cmdline > .cmdline {
     color: #93a1a1;
 }
 
-#cmdline-disp span.str-lit, #cmdline-disp span.int-lit {
+#cmdline-disp span.str-lit,
+#cmdline-disp span.int-lit,
+#cmdline-disp span.date-lit,
+#cmdline-disp span.md-lit,
+#cmdline-disp span.d-lit,
+#cmdline-disp span.month-lit,
+#cmdline-disp span.dow-lit {
     color: #2aa198;
 }
 
