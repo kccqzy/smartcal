@@ -15,9 +15,7 @@
 
 (defn adjust-month
   [y m]
-  (assert (>= y 1600))
-  (assert (>= m 0))
-  [(+ y (quot m 12)) (mod m 12)])
+  (let [new-y (+ y (quot m 12)) new-m (mod m 12)] [new-y new-m]))
 
 (defn ymd-to-day-num
   [y m d]
@@ -52,6 +50,7 @@
 
 (defn day-num-to-date
   [day-num]
+  (assert (>= day-num 0))
   (let [days-in-4y (+ 1 (* 4 365))
         days-in-100y (+ 24 (* 100 365))
         days-in-400y (+ 97 (* 400 365))
@@ -531,39 +530,53 @@
    ls-cmd = <'ls' | 'list'> ( ls-all | ls-visible?)
    ls-all = <ws 'all'>
    ls-visible = <ws 'visible'>
-   next-cmd = <('next' | 'n')> (<ws> int-lit)?
-   prev-cmd = <('prev' | 'p')> (<ws> int-lit)?
-   goto-cmd = <'goto' ws> date-lit
+   next-cmd = <('next' | 'n')> (<ws> int-lit | <ws? '(' ws?> int-expr <ws? ')'>)?
+   prev-cmd = <('prev' | 'p')> (<ws> int-lit | <ws? '(' ws?> int-expr <ws? ')'>)?
+   goto-cmd = <'goto' ws> date-expr
    rm-cmd = <('rm' | 'remove' | 'del' | 'delete') ws> str-lit
    <str-lit> = <'\"'>  #'[^\"]*' <'\"'>
-   <int-lit> = #'[0-9]+'
-   single-occ = <('on' ws)?> date-lit
+   int-lit = #'[0-9]+'
+   single-occ = <('on' ws)?> date-expr
    recurring
-     = <'every' ws>
-       (recur-day | recur-week | recur-month | recur-year)
+     = (recur-day | recur-week | recur-month | recur-year)
        recur-start? recur-end?
    recur-day = recur-day-freq
-   recur-day-freq = (int-lit <ws 'days'> | <'day'>)
+   recur-day-freq = <'every'> ((<ws> int-lit <ws> | <ws? '(' ws?> int-expr <ws? ')' ws?>) <'days'> | <ws 'day'>)
    recur-week
-     = dow-lit-plus
+     = <'every' ws> dow-lit-plus
      | recur-week-freq <ws 'on' ws> dow-lit-plus
-   recur-week-freq = (int-lit <ws 'weeks'> | <'week'>)
+   recur-week-freq = <'every'> ((<ws> int-lit <ws> | <ws? '(' ws?> int-expr <ws? ')' ws?>) <'weeks'> | <ws 'week'>)
    recur-month
     = recur-month-freq <ws 'on' ws ('the' ws)?> recur-month-type
-    | (<'on' ws 'the' ws>)? recur-month-type <ws 'of' ws ('the' | 'each') ws 'month'>
+    | <'every' ws> recur-month-type <ws 'of' ws ('the' | 'each') ws 'month'>
    <recur-month-type> = recur-month-by-d | recur-month-by-dow
    recur-month-by-d = d-lit-plus
    recur-month-by-dow = occurrence-ordinal-plus <ws> dow-lit
-   recur-month-freq = (int-lit <ws 'months'> | <'month'>)
+   recur-month-freq = <'every'> ((<ws> int-lit <ws> | <ws? '(' ws?> int-expr <ws? ')' ws?>) <'months'> | <ws 'month'>)
    recur-year = recur-year-freq <ws 'on' ws> recur-year-type
    <recur-year-type> = recur-year-by-md | recur-year-by-occ-dow-month
    recur-year-by-md = md-lit
    recur-year-by-occ-dow-month = <('the' ws)?> occurrence-ordinal-plus <ws> dow-lit <ws 'of' ws> month-lit-plus
-   recur-year-freq = (int-lit <ws 'years'> | <'year'>)
-   recur-start = <ws 'from' ws> date-lit
-   recur-end
-     = <ws 'until' ws> date-lit
-     | <ws 'for' ws> int-lit <ws> 'times'
+   recur-year-freq = <'every'> ((<ws> int-lit <ws> | <ws? '(' ws?> int-expr <ws? ')' ws?>) <'years'> | <ws 'year'>)
+   recur-start = <ws 'from' ws> date-expr
+   recur-end = <ws 'until' ws> date-expr
+   <date-expr> = date-funs | date-lit
+   <date-funs> = date-plus-fun | date-minus-fun
+   date-plus-fun = <'plus' ws? '(' ws?> date-expr <ws? ',' ws?> interval-expr <ws? ')'>
+   date-minus-fun = <'minus' ws? '(' ws?> date-expr <ws? ',' ws?> interval-expr <ws? ')'>
+   <interval-expr> = day-interval-fun | month-interval-fun | year-interval-fun
+   day-interval-fun = <'d' ws? '(' ws?> int-expr <ws? ')'> | int-lit <'d'>
+   month-interval-fun = <'m' ws? '(' ws?> int-expr <ws? ')'> | int-lit <'m'>
+   year-interval-fun = <'y' ws? '(' ws?> int-expr <ws? ')'> | int-lit <'y'>
+   <int-expr> = int-add-sub-expr
+   <int-add-sub-expr> = int-mul-quot-mod-expr | int-add-expr | int-sub-expr
+   int-add-expr = int-add-sub-expr <ws? '+' ws?> int-mul-quot-mod-expr
+   int-sub-expr = int-add-sub-expr <ws? '-' ws?> int-mul-quot-mod-expr
+   <int-mul-quot-mod-expr> = int-term-expr | int-mul-expr | int-quot-expr | int-mod-expr
+   int-mul-expr = int-mul-quot-mod-expr <ws? '*' ws?> int-term-expr
+   int-quot-expr = int-mul-quot-mod-expr <ws? '/' ws?> int-term-expr
+   int-mod-expr = int-mul-quot-mod-expr <ws? '%' ws?> int-term-expr
+   <int-term-expr> = int-lit | <'(' ws?> int-add-sub-expr <ws? ')'>
    date-lit
      = yyyy-lit mm-lit dd-lit
      | yyyy-lit <'-'> mm-lit <'-'> dd-lit
@@ -590,30 +603,43 @@
    occurrence-ordinal-plus = occurrence-ordinal (<ws? ',' ws?> occurrence-ordinal)*
   ")
 
-(defn transform-parsed-dates
+(defn transform-parsed
   [parsed]
   (insta/transform
-    {:yyyy-lit (comp #(assoc nil :y %) #(js/parseInt % 10)),
+    {:int-lit #(js/parseInt % 10),
+     :int-add-expr +,
+     :int-sub-expr -,
+     :int-mul-expr *,
+     :int-quot-expr (fn [x y] (if (== y 0) 0 (quot x y))),
+     :int-mod-expr (fn [x y] (if (== y 0) 0 (mod x y))),
+     :day-interval-fun #(array-map :d %),
+     :month-interval-fun #(array-map :m %),
+     :year-interval-fun #(array-map :y %),
+     :date-plus-fun (fn [date interval]
+                      (ymd-map-to-date-checked (merge-with + date interval))),
+     :date-minus-fun (fn [date interval]
+                       (ymd-map-to-date-checked (merge-with - date interval))),
+     :yyyy-lit (comp #(assoc nil :y %) #(js/parseInt % 10)),
      :mm-lit (comp #(assoc nil :m %) dec #(js/parseInt % 10)),
      :dd-lit (comp #(assoc nil :d %) #(js/parseInt % 10)),
      :d-lit (comp #(assoc nil :d %) #(js/parseInt % 10)),
      :mmm-lit #(assoc nil :m (.indexOf month-names %)),
      :mmmm-lit #(assoc nil :m (.indexOf full-month-names %)),
      :date-lit (comp ymd-map-to-date conj),
-     :recur-day-freq (fn ([] {:freq 1}) ([s] {:freq (js/parseInt s 10)})),
+     :recur-day-freq (fn ([] {:freq 1}) ([f] {:freq f})),
      :recur-day (fn [& a] (into {:recur-type :day, :freq 1} a)),
      :short-dow-lit #(assoc nil :dow (.indexOf day-names %)),
      :full-dow-lit #(assoc nil :dow (.indexOf full-day-names %)),
      :dow-lit-plus (fn [& ms] {:dow (into #{} (map :dow ms))}),
-     :recur-week-freq (fn ([] {:freq 1}) ([s] {:freq (js/parseInt s 10)})),
+     :recur-week-freq (fn ([] {:freq 1}) ([f] {:freq f})),
      :recur-week (fn [& a] (into {:recur-type :week, :freq 1} a)),
      :d-lit-plus (fn [& ms] {:d (into #{} (map :d ms))}),
-     :recur-month-freq (fn ([] {:freq 1}) ([s] {:freq (js/parseInt s 10)})),
+     :recur-month-freq (fn ([] {:freq 1}) ([f] {:freq f})),
      :recur-month (fn [& a] (into {:recur-type :month, :freq 1} a)),
      :recur-month-by-d (fn [& a] (into {:day-selection :d} a)),
      :recur-month-by-dow (fn [& a] (into {:day-selection :dow} a)),
      :occurrence-ordinal #(assoc nil :occ (get occurrence-ordinals %)),
-     :recur-year-freq (fn ([] {:freq 1}) ([s] {:freq (js/parseInt s 10)})),
+     :recur-year-freq (fn ([] {:freq 1}) ([f] {:freq f})),
      :recur-year (fn [& a] (into {:recur-type :year, :freq 1} a)),
      :recur-year-by-md (fn [& a] (into {:day-selection :md} a)),
      :recur-year-by-occ-dow-month (fn [& a]
@@ -767,35 +793,38 @@
   [input]
   (reset! cmdline-output "")
   (reset! modal-content nil)
-  (when-not (empty? (.trim input))
-    (let [parsed (transform-parsed-dates (cmdline-parser input))]
-      (if (insta/failure? parsed)
-        (reset! cmdline-output (pr-str parsed))
-        (match parsed
-          [:cmd [:next-cmd]] (swap! start-date next-week)
-          [:cmd [:next-cmd n]] (swap! start-date #(next-week (js/parseInt n 10)
-                                                             %))
-          [:cmd [:prev-cmd]] (swap! start-date prev-week)
-          [:cmd [:prev-cmd n]] (swap! start-date #(prev-week (js/parseInt n 10)
-                                                             %))
-          [:cmd [:goto-cmd ymd]] (reset! start-date ymd)
-          [:cmd [:add-cmd name date-spec]]
-            (swap! events #(add-event name date-spec %))
-          [:cmd [:rm-cmd name]]
-            (let [[old new] (swap-vals! events #(remove-events name %))
-                  removals (- (count old) (count new))]
-              (reset! cmdline-output (str "Removed "
-                                          (if (== 1 removals)
-                                            "one event."
-                                            (str removals " events.")))))
-          [:cmd [:help-cmd]] (reset! modal-content :help)
-          [:cmd [:ls-cmd]] (reset! modal-content :ls-visible)
-          [:cmd [:ls-cmd [t]]] (reset! modal-content t)
-          :else (js/window.alert (str "TODO: " (pr-str parsed))))))))
+  (try (when-not (empty? (.trim input))
+         (let [parsed (transform-parsed (cmdline-parser input))]
+           (if (insta/failure? parsed)
+             (reset! cmdline-output (pr-str parsed))
+             (match parsed
+               [:cmd [:next-cmd]] (swap! start-date next-week)
+               [:cmd [:next-cmd n]] (swap! start-date #(next-week n %))
+               [:cmd [:prev-cmd]] (swap! start-date prev-week)
+               [:cmd [:prev-cmd n]] (swap! start-date #(prev-week n %))
+               [:cmd [:goto-cmd ymd]] (reset! start-date ymd)
+               [:cmd [:add-cmd name date-spec]] (swap! events
+                                                  #(add-event name date-spec %))
+               [:cmd [:rm-cmd name]]
+                 (let [[old new] (swap-vals! events #(remove-events name %))
+                       removals (- (count old) (count new))]
+                   (reset! cmdline-output (str "Removed "
+                                               (if (== 1 removals)
+                                                 "one event."
+                                                 (str removals " events.")))))
+               [:cmd [:help-cmd]] (reset! modal-content :help)
+               [:cmd [:ls-cmd]] (reset! modal-content :ls-visible)
+               [:cmd [:ls-cmd [t]]] (reset! modal-content t)
+               :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
+       (catch :default e
+         (reset! cmdline-output
+           (if (and (map? e) (:date-outside-range e))
+             "The specified date is outside the supported range."
+             "An unknown error occurred.")))))
 
 (defn explain-input-component
   [input start until]
-  (let [parsed (transform-parsed-dates (cmdline-parser input))]
+  (let [parsed (transform-parsed (cmdline-parser input))]
     (if-not (insta/failure? parsed)
       (match parsed
         [:cmd [:next-cmd]] "Scroll down by one week"

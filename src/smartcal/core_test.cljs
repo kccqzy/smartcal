@@ -11,7 +11,8 @@
   (is (= (c/ymd-to-day-num 2024 2 1) 154923))
   (is (= (c/ymd-to-day-num 2024 3 1) 154954))
   (is (= (c/ymd-to-day-num 2024 9 1) 155137))
-  (is (= (c/ymd-to-day-num 2024 9 100) 155236)))
+  (is (= (c/ymd-to-day-num 2024 9 100) 155236))
+  (is (= (c/ymd-to-day-num 2399 11 31) 292193)))
 
 (deftest from-day-num
   (is (= (c/day-num-to-date 0) (c/Date. 1600 0 1 6 0)))
@@ -23,6 +24,13 @@
   (is (= (c/day-num-to-date 154923) (c/Date. 2024 2 1 5 154923)))
   (is (= (c/day-num-to-date 154954) (c/Date. 2024 3 1 1 154954)))
   (is (= (c/day-num-to-date 155137) (c/Date. 2024 9 1 2 155137))))
+
+(deftest ymd-map-to-date-checked
+  (is (= (c/ymd-map-to-date-checked {:y 1900, :m 0, :d 1})
+         (c/ymd-to-date 1900 0 1)))
+  (is (thrown? (type {}) (c/ymd-map-to-date-checked {:y 1899, :m 11, :d 31})))
+  (is (thrown? (type {}) (c/ymd-map-to-date-checked {:y 1900, :m 0, :d 0})))
+  (is (thrown? (type {}) (c/ymd-map-to-date-checked {:y 2100, :m 0, :d 1}))) )
 
 (deftest month-num
   (is (= (c/month-num (c/ymd-to-date 1600 0 1)) 0))
@@ -85,7 +93,7 @@
   (is (= (c/load-state {:weeks-to-show 2, :start-date {:y 1999, :m 12, :d 1}})
          {:weeks-to-show 2})))
 
-(defn parses [s] (c/transform-parsed-dates (insta/parses c/cmdline-parser s)))
+(defn parses [s] (c/transform-parsed (insta/parses c/cmdline-parser s)))
 
 (deftest control-language
   (is (= (parses "goto 20241001")
@@ -100,6 +108,11 @@
          [[:cmd [:goto-cmd (c/ymd-to-date 2024 9 12)]]]))
   (is (= (parses "goto 01 Oct 2024")
          [[:cmd [:goto-cmd (c/ymd-to-date 2024 9 1)]]]))
+  (is (= (parses "next") [[:cmd [:next-cmd]]]))
+  (is (= (parses "next 2") [[:cmd [:next-cmd 2]]]))
+  (is (= (parses "next(2)") [[:cmd [:next-cmd 2]]]))
+  (is (= (parses "next (2)") [[:cmd [:next-cmd 2]]]))
+  (is (= (parses "next ((2))") [[:cmd [:next-cmd 2]]]))
   (is (= (parses "add \"x\" on 20241001")
          [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2024 9 1)}]]]))
   (is (= (parses "add \"x\" on Dec 1, 2024")
@@ -107,6 +120,18 @@
   (is (= (parses "add \"x\" every day")
          [[:cmd [:add-cmd "x" {:recurring {:recur-type :day, :freq 1}}]]]))
   (is (= (parses "add \"grocery shopping\" every 3 days")
+         [[:cmd
+           [:add-cmd "grocery shopping"
+            {:recurring {:recur-type :day, :freq 3}}]]]))
+  (is (= (parses "add \"grocery shopping\" every (3) days")
+         [[:cmd
+           [:add-cmd "grocery shopping"
+            {:recurring {:recur-type :day, :freq 3}}]]]))
+  (is (= (parses "add \"grocery shopping\" every (1+1*2) days")
+         [[:cmd
+           [:add-cmd "grocery shopping"
+            {:recurring {:recur-type :day, :freq 3}}]]]))
+  (is (= (parses "add \"grocery shopping\" every(3)days")
          [[:cmd
            [:add-cmd "grocery shopping"
             {:recurring {:recur-type :day, :freq 3}}]]]))
@@ -123,6 +148,10 @@
            [:add-cmd "x"
             {:recurring {:recur-type :week, :freq 1, :dow #{1}}}]]]))
   (is (= (parses "add \"x\" every 3 weeks on Monday")
+         [[:cmd
+           [:add-cmd "x"
+            {:recurring {:recur-type :week, :freq 3, :dow #{1}}}]]]))
+  (is (= (parses "add \"x\" every(3)weeks on Monday")
          [[:cmd
            [:add-cmd "x"
             {:recurring {:recur-type :week, :freq 3, :dow #{1}}}]]]))
@@ -155,6 +184,11 @@
           {:recurring
              {:recur-type :month, :freq 1, :day-selection :d, :d #{18 22}}}]]]))
   (is (= (parses "add \"x\" every 2 months on the 18th")
+         [[:cmd
+           [:add-cmd "x"
+            {:recurring
+               {:recur-type :month, :freq 2, :day-selection :d, :d #{18}}}]]]))
+  (is (= (parses "add \"x\" every(2) months on the 18th")
          [[:cmd
            [:add-cmd "x"
             {:recurring
@@ -236,6 +270,14 @@
                          :day-selection :md,
                          :m 11,
                          :d 26}}]]]))
+  (is (= (parses "add \"x\" every (2)years on 26 Dec")
+         [[:cmd
+           [:add-cmd "x"
+            {:recurring {:recur-type :year,
+                         :freq 2,
+                         :day-selection :md,
+                         :m 11,
+                         :d 26}}]]]))
   (is (= (parses "add \"x\" every year on last Friday of June")
          [[:cmd
            [:add-cmd "x"
@@ -305,7 +347,34 @@
                          :freq 1,
                          :dow #{1},
                          :recur-start (c/ymd-to-date 2020 0 1),
-                         :recur-end (c/ymd-to-date 2020 1 1)}}]]])))
+                         :recur-end (c/ymd-to-date 2020 1 1)}}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, d(12))")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2024 11 13)}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, d(31))")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2025 0 1)}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, d(1+2))")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2024 11 4)}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, d(2*7))")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2024 11 15)}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, d(7/2))")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2024 11 4)}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, d(7%2))")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2024 11 2)}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, d(1-2/(3-4)+5*6))")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2025 0 3)}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, 12d)")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2024 11 13)}]]])
+      "add date by day literals")
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, m(1))")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2025 0 1)}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, 1m)")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2025 0 1)}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, m(0-1))")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2024 10 1)}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, 1y)")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2025 11 1)}]]]))
+  (is (= (parses "add \"x\" on plus(Dec 1, 2024, 10y)")
+         [[:cmd [:add-cmd "x" {:single-occ (c/ymd-to-date 2034 11 1)}]]])))
 
 (deftest recurrent-event-occurrences
   (is (= (c/recurrent-event-occurrences {:recur-type :day, :freq 1}
