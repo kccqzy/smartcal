@@ -42,7 +42,7 @@ div#modal {
 }
 
 div#modal.hidden {
-    top: -85vh;
+    top: calc(-85vh - 30px);
 }
 
 div#control {
