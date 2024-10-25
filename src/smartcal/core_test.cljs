@@ -30,7 +30,7 @@
          (c/ymd-to-date 1900 0 1)))
   (is (thrown? (type {}) (c/ymd-map-to-date-checked {:y 1899, :m 11, :d 31})))
   (is (thrown? (type {}) (c/ymd-map-to-date-checked {:y 1900, :m 0, :d 0})))
-  (is (thrown? (type {}) (c/ymd-map-to-date-checked {:y 2100, :m 0, :d 1}))) )
+  (is (thrown? (type {}) (c/ymd-map-to-date-checked {:y 2100, :m 0, :d 1}))))
 
 (deftest month-num
   (is (= (c/month-num (c/ymd-to-date 1600 0 1)) 0))
@@ -684,3 +684,20 @@
                       nil
                       nil)
       "a recurrent event named \"x\" repeating every year on the last Fri of Jun")))
+
+(deftest simplified-glob-to-regex
+  (is (= (c/simplified-glob-to-regex "abc*def") "abc.*def"))
+  (is (= (c/simplified-glob-to-regex "abc*") "abc.*"))
+  (is (= (c/simplified-glob-to-regex "*") ".*"))
+  (is (= (c/simplified-glob-to-regex "?????") "....."))
+  (is (= (c/simplified-glob-to-regex "abc?") "abc."))
+  (is (= (c/simplified-glob-to-regex "abc.*") "abc\\..*"))
+  (is (= (c/simplified-glob-to-regex "abc$*") "abc\\$.*"))
+  (is (= (c/simplified-glob-to-regex "abc\\*") "abc\\*"))
+  (is (= (c/simplified-glob-to-regex "abc+*") "abc\\+.*")))
+
+(deftest eval-str-exprs
+  (is (= (c/eval-str-exprs ["x" "y"] ["a" "x" "y" "z"]) #{"x" "y"}))
+  (is (= (c/eval-str-exprs ["x" {:str-glob-fun "*y"}]
+                           ["a" "x" "xy" "y" "yz" "z"])
+         #{"x" "y" "xy"})))
