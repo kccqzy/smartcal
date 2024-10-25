@@ -526,6 +526,17 @@
 ;; :help, :ls-all, :ls-visible etc.
 (def modal-content (r/atom nil))
 
+;; When we decide to stop showing the modal, instead of resetting the
+;; modal-content to nil, we change this instead to preserve the original modal
+;; contents. This is nicer since we have an animation (technically a CSS
+;; transition) to dismiss the modal. The user won't have to see a flash of
+;; empty
+;; modal.
+(def modal-shown (r/atom false))
+
+(defn show-modal [x] (reset! modal-shown true) (reset! modal-content x))
+(defn hide-modal [] (reset! modal-shown false))
+
 (def us-bank-holidays
   (mapv #(-> %
              (assoc :system true)
@@ -570,7 +581,7 @@
    goto-cmd = <'goto' ws> date-expr
    rm-cmd = <('rm' | 'remove' | 'del' | 'delete') ws> str-lit
    <str-lit> = <'\"'>  #'[^\"]*' <'\"'>
-   str-expr-star = (<ws> str-expr (<ws? ',' ws?> str-expr)*)?
+   <str-expr-star> = (<ws> str-expr (<ws? ',' ws?> str-expr)*)?
    <str-expr> = str-lit | str-glob-fun
    str-glob-fun = <'glob' ws? '(' ws?> str-lit <ws? ')'>
    int-lit = #'[0-9]+'
@@ -705,10 +716,13 @@
            d
            (if (and (= 1 d) (= 0 m)) (str ", " y))))]
    (let [events-sorted (sort-by :name gstr/intAwareCompare events-on-this-date)]
-     (into
-       [:ul.events]
-       (map #(vector :li {:title (format-event (:name %) % nil nil)} (:name %))
-         events-sorted)))])
+     (into [:ul.events]
+           (map (fn [ev] [:li
+                          {:role "button",
+                           :title (format-event (:name ev) ev nil nil),
+                           :on-click #(do (show-modal [:ls-only #{(:name ev)}])
+                                          (.stopPropagation %))} (:name ev)])
+             events-sorted)))])
 
 (def cmdline-prompt ">>> ")
 
@@ -838,7 +852,7 @@
 (defn execute-input
   [input]
   (reset! cmdline-output "")
-  (reset! modal-content nil)
+  (reset! modal-shown false)
   (try
     (when-not (empty? (.trim input))
       (let [parsed (transform-parsed (cmdline-parser input))]
@@ -859,15 +873,15 @@
                                             (if (== 1 removals)
                                               "one event."
                                               (str removals " events.")))))
-            [:cmd [:help-cmd]] (reset! modal-content :help)
-            [:cmd [:ls-cmd]] (reset! modal-content :ls-visible)
-            [:cmd [:ls-cmd [t]]] (reset! modal-content t)
-            [:cmd [:ls-cmd [:ls-only [:str-expr-star & exprs]]]]
+            [:cmd [:help-cmd]] (show-modal :help)
+            [:cmd [:ls-cmd]] (show-modal :ls-visible)
+            [:cmd [:ls-cmd [t]]] (show-modal t)
+            [:cmd [:ls-cmd [:ls-only & exprs]]]
               (let [selected-events (eval-str-exprs exprs (map :name @events))]
                 (if (empty? selected-events)
                   (reset! cmdline-output
                     "No events selected for display in \"ls only\" command.")
-                  (reset! modal-content [:ls-only selected-events])))
+                  (show-modal [:ls-only selected-events])))
             :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
     (catch :default e
       (reset! cmdline-output
@@ -891,8 +905,8 @@
         [:cmd [:ls-cmd]] "List events visible in the current view"
         [:cmd [:ls-cmd [:ls-all]]] "List all events"
         [:cmd [:ls-cmd [:ls-visible]]] "List events visible in the current view"
-        [:cmd [:ls-cmd [:ls-only [:str-expr-star & exprs]]]]
-          (str "List events that are " (format-str-exprs exprs))
+        [:cmd [:ls-cmd [:ls-only & exprs]]] (str "List events that are "
+                                                 (format-str-exprs exprs))
         [:cmd [:help-cmd]] "Show help"
         :else (pr-str parsed)))))
 
@@ -988,10 +1002,14 @@
   []
   (match @modal-content
     nil [:div#modal.hidden]
-    :help [:div#modal.help [help-modal-component]]
-    :ls-visible [:div#modal.ls [ls-modal-component false nil]]
-    :ls-all [:div#modal.ls [ls-modal-component true nil]]
-    [:ls-only selected] [:div#modal.ls [ls-modal-component true selected]]))
+    :help [:div#modal.help {:class (if @modal-shown "" "hidden")}
+           [help-modal-component]]
+    :ls-visible [:div#modal.ls {:class (if @modal-shown "" "hidden")}
+                 [ls-modal-component false nil]]
+    :ls-all [:div#modal.ls {:class (if @modal-shown "" "hidden")}
+             [ls-modal-component true nil]]
+    [:ls-only selected] [:div#modal.ls {:class (if @modal-shown "" "hidden")}
+                         [ls-modal-component true selected]]))
 
 (defn calendar-component
   []
@@ -1008,7 +1026,8 @@
                      (let [new-value (js/parseInt (.. e -target -value))]
                        (reset! weeks-to-show new-value)))}] [:p @weeks-to-show]]
      [:div#table
-      {:style {:grid-template-rows
+      {:on-click #(hide-modal),
+       :style {:grid-template-rows
                  (str "30px repeat(" @weeks-to-show ", minmax(5rem, 1fr))")}}
       [:div.td.th "Sun"] [:div.td.th "Mon"] [:div.td.th "Tue"]
       [:div.td.th "Wed"] [:div.td.th "Thu"] [:div.td.th "Fri"]

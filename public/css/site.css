@@ -21,7 +21,7 @@ div#cal {
 }
 
 div#modal {
-    height: 85vh;
+    max-height: 85vh;
     width: min(85vw, 850px);
     box-sizing: border-box;
     position: absolute;
@@ -106,6 +106,7 @@ ul.events > li {
     text-wrap: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    cursor: pointer;
 }
 
 #cmdline-inout {
