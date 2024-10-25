@@ -1025,13 +1025,9 @@
         :on-change (fn [e]
                      (let [new-value (js/parseInt (.. e -target -value))]
                        (reset! weeks-to-show new-value)))}] [:p @weeks-to-show]]
-     [:div#table
-      {:on-click #(hide-modal),
-       :style {:grid-template-rows
-                 (str "30px repeat(" @weeks-to-show ", minmax(5rem, 1fr))")}}
-      [:div.td.th "Sun"] [:div.td.th "Mon"] [:div.td.th "Tue"]
-      [:div.td.th "Wed"] [:div.td.th "Thu"] [:div.td.th "Fri"]
-      [:div.td.th "Sat"]
+     [:div#table {:on-click #(hide-modal)} [:div.td.th "Sun"] [:div.td.th "Mon"]
+      [:div.td.th "Tue"] [:div.td.th "Wed"] [:div.td.th "Thu"]
+      [:div.td.th "Fri"] [:div.td.th "Sat"]
       (let [days-with-events (get-days-with-events start until @events)]
         (doall (for [x (range (* 7 @weeks-to-show))]
                  (let [date (day-num-to-date (+ x (:daynum start)))]
