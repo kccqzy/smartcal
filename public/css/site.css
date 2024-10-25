@@ -63,7 +63,7 @@ div#table {
     flex-grow: 1;
     display: grid;
     overflow-y: auto;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     border-top: solid 2px #333;
     border-bottom: solid 3px #333;
     margin: 1em 0;
