@@ -1,17 +1,17 @@
 body {
     font-family: "DejaVu Sans", "Bitstream Vera Sans", Verdana, sans-serif;
-    max-width: 1000px;
+    max-width: 62rem;
     margin: 0 auto;
     -webkit-font-smoothing: antialiased;
     color: #333;
-    height: calc(100vh - 18px);
+    height: calc(100svh - 1rem);
     background-color: #ececec;
 }
 
 div#app {
     height: 100%;
     position: relative;
-    padding-top: 18px;
+    padding-top: 1rem;
 }
 
 div#cal {
@@ -21,8 +21,8 @@ div#cal {
 }
 
 div#modal {
-    max-height: 85vh;
-    width: min(85vw, 850px);
+    max-height: 85svh;
+    width: min(85svw, 52.7rem);
     box-sizing: border-box;
     position: absolute;
     z-index: 10;
@@ -42,7 +42,7 @@ div#modal {
 }
 
 div#modal.hidden {
-    top: calc(-85vh - 30px);
+    top: calc(-85vh - 2rem);
 }
 
 div#control {
@@ -68,13 +68,13 @@ div#table {
     grid-auto-rows: minmax(5rem, 1fr);
     border-top: solid 2px #333;
     border-bottom: solid 3px #333;
-    margin: 1em 0;
-    padding: 0 0.3em;
+    margin: 1rem 0;
+    padding: 0 0.3rem;
 }
 
 div#table > .td {
     border-bottom: solid 1px #333;
-    padding: 0.2em 0;
+    padding: 0.2rem 0;
 }
 
 div#table > .td:nth-last-child(1),
@@ -99,7 +99,7 @@ ul.events {
     margin: 0;
     padding: 0;
     list-style-type: none;
-    font-size: 0.85em;
+    font-size: 0.85rem;
 }
 
 ul.events > li {
@@ -126,9 +126,9 @@ div#cmdline > .cmdline {
     display: block;
     font-family: Menlo, "DejaVu Sans Mono", monospace;
     margin: 0;
-    padding: 10px;
+    padding: 0.5rem;
     border: 0;
-    width: calc(100% - 20px);
+    width: calc(100% - 1rem);
     font-size: 0.8rem;
     line-height: 1rem;
     /* We just want to simulate the terminal behavior. */
@@ -138,8 +138,8 @@ div#cmdline > .cmdline {
 }
 
 #cmdline-out {
-    padding: 0 10px;
-    max-height: 6em;
+    padding: 0 0.5rem;
+    max-height: 6rem;
     overflow-y: auto;
     color: #657b83;
 }
@@ -192,7 +192,7 @@ div#modal.help code {
     background-color: #ddd;
     border: solid 1px #ccc;
     border-radius: 3px;
-    font-size: 0.9em;
+    font-size: 0.9rem;
     padding: 0 2px;
     box-shadow: 0px 1px 1px #ddd;
 }
@@ -217,8 +217,8 @@ div#ls-grid > div:nth-child(2n+1) {
 
 div#ls-grid > div.ls-minigrid {
     display: grid;
-    grid-template-columns: repeat(7, 10px);
-    grid-auto-rows: 10px;
+    grid-template-columns: repeat(7, 0.75rem);
+    grid-auto-rows: 0.75rem;
 }
 
 div#ls-grid div.ls-minigrid-day {
@@ -236,7 +236,7 @@ div#ls-grid div.ls-minigrid-day.absent {
 }
 
 div#ls-grid div.ls-desc {
-    font-size: 0.85em;
+    font-size: 0.85rem;
 }
 
 div#ls-grid div.ls-desc h4 {
