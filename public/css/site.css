@@ -3,6 +3,7 @@ body {
     max-width: 62rem;
     margin: 0 auto;
     -webkit-font-smoothing: antialiased;
+    padding: 0 1rem;
     color: #333;
     height: calc(100svh - 1rem);
     background-color: #ececec;
