@@ -54,28 +54,28 @@ this?
 First get React by running `npm install`. The `package.json` file is very
 simple: it only has React stuff.
 
-Then start the development server by `clojure -M:shadow-cljs watch app`.
+Then start the development server by `clojure -M:develop`.
 
-(The recommended way of using `npx shadow-cljs watch app` unfortunately didn't
-work. This alternative way of running shadow-cljs is documented in [section
-3.2.2 of the shadow-cljs manual](https://shadow-cljs.github.io/docs/UsersGuide.html#deps-edn).
-It does not involve downloading shadow-cljs from node.)
+(The recommended way of using `npx shadow-cljs` to use shadow-cljs unfortunately
+didn't work. This alternative way of running shadow-cljs is documented in
+[section 3.2.2 of the shadow-cljs
+manual](https://shadow-cljs.github.io/docs/UsersGuide.html#deps-edn). It does
+not involve downloading shadow-cljs from node.)
 
 Afterwards navigate to localhost:3000 in a browser.
 
 ### Unit Tests
 
-Unit tests are run in the browser. It has hot reload just as the main code. Run
-`clojure -M:shadow-cljs watch test` and then navigate to localhost:3001 in a
-browser. The test results are then displayed in the browser. One can also use
-`clojure -M:shadow-cljs watch app test` to do both.
+Unit tests are run in the browser. It has hot reload just as the main code. When
+running `clojure -M:develop`, the unit tests are compiled to JS already. Just
+navigate to localhost:3001 in a browser. The test results are then displayed in
+the browser.
 
 ### Code Formatting
 
-Just use `zprint` in its default configuration. Run `clojure -M:zprint -w
-src/smartcal/core.cljs` to format the main code. Run `clojure -M:zprint -w
-src/smartcal/core_test.cljs` to format the unit tests.
+We use `zprint` in its default configuration. Run `clojure -M:fix` to run it on
+the two (hard-coded) source files.
 
 ### Release Build
 
-To produce a release build, run `clojure -M:shadow-cljs release app`.
+To produce a release build, run `clojure -M:release`.
