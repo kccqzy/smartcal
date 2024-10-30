@@ -581,7 +581,6 @@
    goto-cmd = <'goto' ws> date-expr
    rm-cmd = <('rm' | 'remove' | 'del' | 'delete') ws> str-lit
    <str-lit> = <'\"'>  #'[^\"]*' <'\"'>
-   <str-expr-star> = (<ws> str-expr (<ws? ',' ws?> str-expr)*)?
    <str-expr> = str-lit | str-glob-fun
    str-glob-fun = <'glob' ws? '(' ws?> str-lit <ws? ')'>
    int-lit = #'[0-9]+'
@@ -644,12 +643,18 @@
    full-dow-lit = 'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday'
    <dow-lit> = short-dow-lit | full-dow-lit
    <month-lit> = mmm-lit | mmmm-lit
-   d-lit-plus = d-lit (<ws? ',' ws?> d-lit)*
-   dow-lit-plus = dow-lit (<ws? ',' ws?> dow-lit)*
-   month-lit-plus = month-lit (<ws? ',' ws?> month-lit)*
    <ordinal-suffix> = 'st' | 'nd' | 'rd' | 'th'
    occurrence-ordinal = 'first' | 'second' | 'third' | 'fourth' | 'fifth' | 'last'
-   occurrence-ordinal-plus = occurrence-ordinal (<ws? ',' ws?> occurrence-ordinal)*
+
+   (* Repetitions. It sucks that we don't have parametrized rules or the fact
+      that we are not using combinators here. Here we want to allow either
+      comma-separated with optional whitespace, or whitespace separated with
+      mandatory whitespace. *)
+   d-lit-plus = d-lit ((<ws? ',' ws?> d-lit)* | (<ws> d-lit)*)
+   dow-lit-plus = dow-lit ((<ws? ',' ws?> dow-lit)* | (<ws> dow-lit)*)
+   month-lit-plus = month-lit ((<ws? ',' ws?> month-lit)* | (<ws> month-lit)*)
+   occurrence-ordinal-plus = occurrence-ordinal ((<ws? ',' ws?> occurrence-ordinal)* | (<ws> occurrence-ordinal)*)
+   <str-expr-star> = (<ws> str-expr ((<ws? ',' ws?> str-expr)* | <ws> str-expr))?
   ")
 
 (defn transform-parsed
@@ -775,9 +780,11 @@
     that period. The command "
      [:code "add \"TGIF\" every week on Fri"]
      " is an example. There may be multiple days specified, so "
-     [:code "add \"Go to the gym\" every week on
-    Mon, Fri"]
-     " creates an event that repeats on Monday and Friday. The command "
+     [:code "add \"Go to the gym\" every week on Mon, Fri"]
+     " creates an event that repeats on Monday and Friday. (The repeated days
+     may be separated by commas or simply whitespace, so "
+     [:code "add \"Go to the gym\" every week on Mon Fri"]
+     " also works, but the two styles cannot be mixed.) The command "
      [:code "add \"Get payslips\" every 2 weeks on Fri"]
      " sets 14 days as the period of recurrence, so only the first Friday of each
    period is specified."]

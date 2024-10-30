@@ -159,6 +159,12 @@
          [[:cmd
            [:add-cmd "x"
             {:recurring {:recur-type :week, :freq 1, :dow #{1 5}}}]]]))
+  (is (= (parses "add \"x\" every week on Monday  Wednesday Friday")
+         [[:cmd
+           [:add-cmd "x"
+            {:recurring {:recur-type :week, :freq 1, :dow #{1 3 5}}}]]]))
+  (is (= (parses "add \"x\" every week on Monday, Wednesday Friday") [])
+      "cannot mix comma-separated and space-separated values")
   (is (= (parses "add \"x\" every Monday, Friday")
          [[:cmd
            [:add-cmd "x"
@@ -179,6 +185,12 @@
                {:recur-type :month, :freq 1, :day-selection :d, :d #{18}}}]]]))
   (is
     (= (parses "add \"x\" every month on the 18th, 22nd")
+       [[:cmd
+         [:add-cmd "x"
+          {:recurring
+             {:recur-type :month, :freq 1, :day-selection :d, :d #{18 22}}}]]]))
+  (is
+    (= (parses "add \"x\" every month on the 18th 22nd")
        [[:cmd
          [:add-cmd "x"
           {:recurring
