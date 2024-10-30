@@ -224,7 +224,8 @@ div#ls-grid > div.ls-minigrid {
 div#ls-grid div.ls-minigrid-day {
     margin: 0;
     padding: 0;
-    border: solid 1px #ccc;
+    border-top: solid 2px #ccc;
+    border-left: solid 2px #ccc;
 }
 
 div#ls-grid div.ls-minigrid-day.present {
@@ -233,6 +234,20 @@ div#ls-grid div.ls-minigrid-day.present {
 
 div#ls-grid div.ls-minigrid-day.absent {
     background-color: #e6e6e6;
+}
+
+div#ls-grid div.ls-minigrid-day:nth-child(7n) {
+    border-right: solid 2px #ccc;
+}
+
+div#ls-grid div.ls-minigrid-day:nth-last-child(1),
+div#ls-grid div.ls-minigrid-day:nth-last-child(2),
+div#ls-grid div.ls-minigrid-day:nth-last-child(3),
+div#ls-grid div.ls-minigrid-day:nth-last-child(4),
+div#ls-grid div.ls-minigrid-day:nth-last-child(5),
+div#ls-grid div.ls-minigrid-day:nth-last-child(6),
+div#ls-grid div.ls-minigrid-day:nth-last-child(7) {
+    border-bottom: solid 2px #ccc;
 }
 
 div#ls-grid div.ls-desc {
