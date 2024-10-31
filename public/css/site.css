@@ -90,6 +90,9 @@ div#table > .td:nth-last-child(7) {
 
 div#table > .th {
     font-weight: bold;
+    position: sticky;
+    top: 0;
+    background-color: #ececec;
 }
 
 p.day {
