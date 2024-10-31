@@ -568,9 +568,10 @@
 
 (defparser
   cmdline-parser
-  "cmd = <ws?> (help-cmd | add-cmd | ls-cmd | rm-cmd | next-cmd | prev-cmd | goto-cmd) <ws?>
+  "cmd = <ws?> (help-cmd | add-cmd | ls-cmd | rm-cmd | next-cmd | prev-cmd | goto-cmd | config-cmd) <ws?>
    <ws> = #' +'
    help-cmd = <'help'>
+   config-cmd = <'config' | 'settings' | 'prefs'>
    add-cmd = <'add' (ws 'event')? ws> str-lit <ws> (single-occ | recurring)
    ls-cmd = <'ls' | 'list'> (ls-all | ls-visible? | ls-only)
    ls-all = <ws 'all'>
@@ -856,6 +857,18 @@
                          [:p "No occurrences in visible date range."])]))]]))))
         (sort-by :name gstr/intAwareCompare @events)))))
 
+(defn config-modal-component
+  []
+  [:div#control [:p "Weeks to display: "]
+   [:input
+    {:type "range",
+     :value @weeks-to-show,
+     :min 1,
+     :max 60,
+     :on-change (fn [e]
+                  (let [new-value (js/parseInt (.. e -target -value))]
+                    (reset! weeks-to-show new-value)))}] [:p @weeks-to-show]])
+
 (defn execute-input
   [input]
   (reset! cmdline-output "")
@@ -881,6 +894,7 @@
                                               "one event."
                                               (str removals " events.")))))
             [:cmd [:help-cmd]] (show-modal :help)
+            [:cmd [:config-cmd]] (show-modal :config)
             [:cmd [:ls-cmd]] (show-modal :ls-visible)
             [:cmd [:ls-cmd [t]]] (show-modal t)
             [:cmd [:ls-cmd [:ls-only & exprs]]]
@@ -915,6 +929,7 @@
         [:cmd [:ls-cmd [:ls-only & exprs]]] (str "List events that are "
                                                  (format-str-exprs exprs))
         [:cmd [:help-cmd]] "Show help"
+        [:cmd [:config-cmd]] "Configure calendar display"
         :else (pr-str parsed)))))
 
 (defn cmdline-component
@@ -1011,6 +1026,8 @@
     nil [:div#modal.hidden]
     :help [:div#modal.help {:class (if @modal-shown "" "hidden")}
            [help-modal-component]]
+    :config [:div#modal.config {:class (if @modal-shown "" "hidden")}
+             [config-modal-component]]
     :ls-visible [:div#modal.ls {:class (if @modal-shown "" "hidden")}
                  [ls-modal-component false nil]]
     :ls-all [:div#modal.ls {:class (if @modal-shown "" "hidden")}
@@ -1023,15 +1040,6 @@
   (let [start (actual-start @start-date)
         until (day-num-to-date (+ (* 7 @weeks-to-show) (:daynum start)))]
     [:div#cal [modal-component]
-     [:div#control [:p "Weeks to display: "]
-      [:input
-       {:type "range",
-        :value @weeks-to-show,
-        :min 1,
-        :max 60,
-        :on-change (fn [e]
-                     (let [new-value (js/parseInt (.. e -target -value))]
-                       (reset! weeks-to-show new-value)))}] [:p @weeks-to-show]]
      [:div#table {:on-click #(hide-modal)} [:div.td.th "Sun"] [:div.td.th "Mon"]
       [:div.td.th "Tue"] [:div.td.th "Wed"] [:div.td.th "Thu"]
       [:div.td.th "Fri"] [:div.td.th "Sat"]
