@@ -95,6 +95,10 @@ div#table > .th {
     position: sticky;
     top: 0;
     background-color: #ececec;
+    z-index: 5;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.7rem;
 }
 
 p.day {
