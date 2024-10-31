@@ -66,7 +66,7 @@ div#table {
     overflow-y: auto;
     grid-template-columns: repeat(7, minmax(0, 1fr));
     grid-template-rows: min-content;
-    grid-auto-rows: minmax(5rem, 1fr);
+    grid-auto-rows: minmax(5.5rem, 1fr);
     border-top: solid 2px #333;
     border-bottom: solid 3px #333;
     margin: 1rem 0;
@@ -76,6 +76,8 @@ div#table {
 div#table > .td {
     border-bottom: solid 1px #333;
     padding: 0.2rem 0;
+    display: flex;
+    flex-direction: column;
 }
 
 div#table > .td:nth-last-child(1),
@@ -104,15 +106,35 @@ ul.events {
     padding: 0;
     list-style-type: none;
     font-size: 0.85rem;
+    flex-grow: 1;
+    overflow: auto;
 }
 
 ul.events > li {
-    width: 98%;
-    padding: 1%;
     text-wrap: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: pointer;
+    font-size: 0.7rem;
+    box-sizing: border-box;
+    width: calc(100% - 4px);
+    position: relative;
+    padding-left: 1em;
+}
+
+ul.events > li::before {
+    /* The built-in `list-style-type: circle` looks ugly. We create our own. */
+    content: " ";
+    display: block;
+    width: 0.8em;
+    height: 0.8em;
+    border-radius: 1000px;
+    border: solid 1px #333;
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    margin: auto 0;
 }
 
 #cmdline-inout {
