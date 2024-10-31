@@ -1061,4 +1061,4 @@
   (when VERBOSE (println "Initial app state " @app-state))
   (dom/render [home-page] (.getElementById js/document "app")))
 
-(defn ^:export init! [] (mount-root))
+(defn ^:dev/after-load init! [] (mount-root))

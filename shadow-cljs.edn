@@ -1,9 +1,8 @@
 {:builds       {:app {:target     :browser
                       :output-dir "public/js"
                       :asset-path "/js"
-                      :modules    {:app {:entries [smartcal.core]}}
-                      :dev        {:closure-defines {smartcal.core/VERBOSE true}}
-                      :devtools   {:after-load smartcal.core/mount-root}}
+                      :modules    {:app {:init-fn smartcal.core/init!}}
+                      :dev        {:closure-defines {smartcal.core/VERBOSE true}}}
                 :test {:target :browser-test :test-dir "out/test"}}
  :deps true  ; use deps.edn to launch shadow-cljs, rather than npx
  :dev-http     {3000 {:root "public"}
