@@ -51,10 +51,7 @@ this?
 
 ### Development mode
 
-First get React by running `npm install`. The `package.json` file is very
-simple: it only has React stuff.
-
-Then start the development server by `clojure -M:develop`.
+Start the development server by `clojure -M:develop`.
 
 (The recommended way of using `npx shadow-cljs` to use shadow-cljs unfortunately
 didn't work. This alternative way of running shadow-cljs is documented in

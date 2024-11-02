@@ -1,9 +1,10 @@
 (ns smartcal.core
-  (:require [reagent.core :as r]
-            [reagent.dom :as dom]
+  (:require [shadow.grove :as sg :refer (<< defc dev-log)]
+            [shadow.grove.kv :as kv]
             [instaparse.core :as insta :refer [defparser]]
             [cljs.core.match :refer [match]]
             [clojure.string :as cstr]
+            [clojure.set :as cset]
             [goog.string :as gstr]))
 
 (goog-define VERBOSE false)
@@ -285,13 +286,14 @@
                                   all-days))))))
 
 (defn add-event
-  [name date-spec events]
+  [env name date-spec]
   (let [modified-date-spec
           (if (and (:recurring date-spec)
                    (nil? (:recur-start (:recurring date-spec))))
             (assoc-in date-spec [:recurring :recur-start] (today))
-            date-spec)]
-    (conj events (assoc modified-date-spec :name name))))
+            date-spec)
+        final-event (assoc modified-date-spec :name name)]
+    (kv/add env :events final-event)))
 
 (defn remove-events
   "Remove events by name."
@@ -334,7 +336,7 @@
 (def occurrence-ordinals
   {"first" 0, "second" 1, "third" 2, "fourth" 4, "fifth" 5, "last" -1})
 
-(def occurrence-ordinals-inv (clojure.set/map-invert occurrence-ordinals))
+(def occurrence-ordinals-inv (cset/map-invert occurrence-ordinals))
 
 (defn format-date-en-us
   [{:keys [y m d]}]
@@ -462,7 +464,30 @@
 ;; -------------------------
 ;; State
 
-(def initial-app-state {:weeks-to-show 15, :start-date (today)})
+(defonce rt-ref (sg/get-runtime :app))
+
+(defn init-ui-state!
+  []
+  (sg/add-kv-table rt-ref
+                   :ui
+                   {}
+                   {:weeks-to-show 15,
+                    :start-date (today),
+                    :cmdline-input "",
+                    :cmdline-output
+                      "Welcome to smartcal. Type \"help\" for help.",
+                    ;; This defines what kind of content the modal is
+                    ;; showing. It may be nil, :help, :ls-all, :ls-visible
+                    ;; etc.
+                    :modal-content nil,
+                    ;; When we decide to stop showing the modal, instead of
+                    ;; resetting the modal-content to nil, we change this
+                    ;; instead to preserve the original modal contents.
+                    ;; This is nicer since we have an animation
+                    ;; (technically a CSS transition) to dismiss the modal.
+                    ;; The user won't have to see a flash of the empty
+                    ;; modal.
+                    :modal-shown false}))
 
 (def app-state-validators
   {:weeks-to-show #(and (integer? %) (>= % 1) (<= % 60)),
@@ -476,6 +501,11 @@
                      (< (:m %) 12)
                      (>= (:d %) 1)
                      (<= (:d %) 31))})
+
+(sg/reg-event :app
+              :modify-weeks-to-show
+              (fn [env {:keys [weeks-to-show]}]
+                (assoc-in env [:ui :weeks-to-show] weeks-to-show)))
 
 (defn save-state
   [app-state]
@@ -498,44 +528,25 @@
                             :keywordize-keys
                             true))
        (catch :default e
-         (do (when VERBOSE (println "Reloading from localStorage failed"))
-             {}))))
+         (do (dev-log "Reloading from localStorage failed" e) {}))))
 
-(def app-state (r/atom (merge initial-app-state (reload-from-local-storage))))
+(defn show-modal
+  [env content]
+  (-> env
+      (assoc-in [:ui :modal-shown] true)
+      (assoc-in [:ui :modal-content] content)))
+(sg/reg-event :app
+              :show-modal
+              (fn [env {:keys [content]}] (show-modal env content)))
 
-(defn save-to-local-storage
-  []
-  (when VERBOSE (println "Saving to localStorage:" @app-state))
-  (try (.setItem js/window.localStorage
-                 "appstate"
-                 (js/JSON.stringify (clj->js (save-state @app-state))))
-       (catch :default e
-         (when VERBOSE (println "Saving to localStorage failed")))))
 
-(def saver (r/track! save-to-local-storage))
+(defn hide-modal [env _] (assoc-in env [:ui :modal-shown] false))
+(sg/reg-event :app :hide-modal hide-modal)
 
-(def weeks-to-show (r/cursor app-state [:weeks-to-show]))
-
-(def start-date (r/cursor app-state [:start-date]))
-
-(def cmdline-input (r/atom ""))
-
-(def cmdline-output (r/atom "Welcome to smartcal. Type \"help\" for help."))
-
-;; This defines what kind of content the modal is showing. It may be nil,
-;; :help, :ls-all, :ls-visible etc.
-(def modal-content (r/atom nil))
-
-;; When we decide to stop showing the modal, instead of resetting the
-;; modal-content to nil, we change this instead to preserve the original modal
-;; contents. This is nicer since we have an animation (technically a CSS
-;; transition) to dismiss the modal. The user won't have to see a flash of
-;; empty
-;; modal.
-(def modal-shown (r/atom false))
-
-(defn show-modal [x] (reset! modal-shown true) (reset! modal-content x))
-(defn hide-modal [] (reset! modal-shown false))
+(defn show-message [env msg] (assoc-in env [:ui :cmdline-output] msg))
+(sg/reg-event :app
+              :show-message
+              (fn [env {:keys [msg]}] (show-message env msg)))
 
 (def us-bank-holidays
   (mapv #(-> %
@@ -561,7 +572,14 @@
       :recurring {:day-selection :occ-dow-month, :occ #{3}, :dow 4, :m #{10}}}
      {:name "Christmas Day", :recurring {:day-selection :md, :m 11, :d 25}}]))
 
-(def events (r/atom us-bank-holidays))
+(defn init-events-state!
+  []
+  (sg/add-kv-table rt-ref
+                   :events
+                   {:primary-key :name}
+                   (into {} (map #(vector (:name %) %) us-bank-holidays))))
+
+(sg/reg-event :app :add-event! (fn [env event] (kv/add env :events event)))
 
 ;; -------------------------
 ;; Control language
@@ -712,207 +730,278 @@
 ;; -------------------------
 ;; Components
 
-(defn day-component
+(defc day-component
   [{:keys [y m d], :as ymd} show-complete events-on-this-date]
-  [:div.td
-   [:p.day
-    (if show-complete
-      (format-date-en-us ymd)
-      (str (if (= 1 d) (str (get month-names m) " "))
-           d
-           (if (and (= 1 d) (= 0 m)) (str ", " y))))]
-   (let [events-sorted (sort-by :name gstr/intAwareCompare events-on-this-date)]
-     (into [:ul.events]
-           (map (fn [ev] [:li
-                          {:role "button",
-                           :title (format-event (:name ev) ev nil nil),
-                           :on-click #(do (show-modal [:ls-only #{(:name ev)}])
-                                          (.stopPropagation %))} (:name ev)])
-             events-sorted)))])
+  (bind events-sorted (sort-by :name gstr/intAwareCompare events-on-this-date))
+  (render
+    (<< [:div.td
+         [:p.day
+          (if show-complete
+            (format-date-en-us ymd)
+            (str (if (= 1 d) (str (get month-names m) " "))
+                 d
+                 (if (and (= 1 d) (= 0 m)) (str ", " y))))]
+         [:ul.events
+          (sg/keyed-seq events-sorted
+                        :name
+                        (fn [ev]
+                          (<< [:li
+                               {:role "button",
+                                :title (format-event (:name ev) ev nil nil),
+                                :on-click {:e :event-click, :name (:name ev)}}
+                               (:name ev)])))]]))
+  (event :event-click
+         [env {:keys [name]} e]
+         (do (.stopPropagation e)
+             (sg/run-tx env {:e :show-modal, :content [:ls-only #{name}]}))))
 
 (def cmdline-prompt ">>> ")
 
 (def cmdline-prompt-length (.-length cmdline-prompt))
 
-(defn cmdline-display-component
+(defn remove-subsequence
+  [val needle]
+  (let [[processed remaining]
+          (reduce (fn [[before-str after-str :as st] ch]
+                    (let [index (.indexOf after-str ch)]
+                      (if (== index -1)
+                        [(str before-str after-str) ""]
+                        (let [this-before (.substring after-str 0 index)
+                              this-after (.substring after-str (inc index))]
+                          [(str before-str this-before) this-after]))))
+            ["" val]
+            (seq needle))]
+    (str processed remaining)))
+
+(defc cmdline-display-component
   [[production-kw & remaining]]
-  (into [:span {:class (name production-kw)}]
-        (map #(cond (string? %) [:span %]
-                    (vector? %) [cmdline-display-component %])
-          remaining)))
+  (render (<< [:span {:class (name production-kw)}
+               (sg/simple-seq remaining
+                              #(cond (string? %) (<< [:span %])
+                                     (vector? %) (cmdline-display-component
+                                                   %)))])))
 
-(defn help-modal-component
+(defc help-modal-component
   []
-  [:<>
-   [:p
-    "This is a smart calendar app that runs completely in your browser. It is
-    controlled by typing commands into the command area at the bottom."]
-   [:details {:open true} [:summary "Navigating the calendar"]
-    [:p "Type " [:code "next"] " or " [:code "prev"]
-     " to move the calendar view forward or backward by one week. When followed
-   with an integer, the calendar view is moved by that many weeks. For example "
-     [:code "next 7"] " moves the calendar forward by 7 weeks."]
-    [:p "To go to a specific date, use the " [:code "goto"]
-     " command, followed by a date literal. There are many ways you can specify a
-   date literal. So all of these work: "
-     [:code "goto 20241001"] ", " [:code "goto 2024-10-01"] ", "
-     [:code "goto Oct 1, 2024"] ", " [:code "goto 01 Oct 2024"]
-     ". However you cannot specify the month as a number unless the year is specified first.
-    This is because some put the day before the month, and some after, so a date
-    like 10/01/2024 is inherently ambiguous."]]
-   [:details {:open true} [:summary "Adding events"]
-    [:p "The " [:code "add"]
-     " command is used to add new events. An event always has a name, which need
-   not be unique. An event can be a single occurrence or a recurring event."]
-    [:p "A single event has its occurrence date specified using the "
-     [:code "on"] " keyword. So "
-     [:code "add \"Celebrate Jack's 60th birthday\" on 20241018"]
-     " creates a single event with that name and on that date."]
-    [:p "A recurring event has its recurrence pattern specified using the "
-     [:code "every"]
-     " keyword, followed by the recurrence period, which may be specified in
-    units of days, weeks, months, or years."]
-    [:p [:em "Day-based recurrence. "] "The command "
-     [:code "add \"Daily reflection\" every day"] " is an example. The command "
-     [:code "add \"Take out the trash\" every 3 days"] " is another example."]
-    [:p [:em "Week-based recurrence. "]
-     "Week-based recurrences are simply day-based recurrences where the period is
-    a multiple of 7. It allows you to specify the days in the first 7 days of
-    that period. The command "
-     [:code "add \"TGIF\" every week on Fri"]
-     " is an example. There may be multiple days specified, so "
-     [:code "add \"Go to the gym\" every week on Mon, Fri"]
-     " creates an event that repeats on Monday and Friday. (The repeated days
-     may be separated by commas or simply whitespace, so "
-     [:code "add \"Go to the gym\" every week on Mon Fri"]
-     " also works, but the two styles cannot be mixed.) The command "
-     [:code "add \"Get payslips\" every 2 weeks on Fri"]
-     " sets 14 days as the period of recurrence, so only the first Friday of each
-   period is specified."]
-    [:p [:em "Month-based recurrence. "]
-     "Month-based recurrences specify the period of recurrence in units of
-    months, as well as the selection of a day within a month. The command "
-     [:code "add \"Pay credit card\" every month on 28"]
-     " sets the recurrence period to be one month, and it specifies the 28th day
-    of each selected month. The command "
-     [:code
-      "add \"Review personal finances\" every 2 months on the first Saturday"]
-     " sets the recurrence period to be two
-    months, and in the first month of each period, specifies the first
-    Saturday."]
-    [:p [:em "Year-based recurrence. "]
-     "Year-based recurrences similarly specify the period of recurrence in units
-    of years, as well as the selection of a day within a year. The command "
-     [:code "add \"Celebrate Dad's birthday\" every year on Apr 30"]
-     " is an example. The command "
-     [:code
-      "add \"Pay property tax\" every year on the first Monday of Apr, Dec"]
-     " is another example."]]
-   [:details {:open true} [:summary "Listing and inspecting events"]
-    [:p "The " [:code "ls"]
-     " command can be used to list added events and inspect them. The output is
-    shown graphically, containing the name of the event, whether it is recurrent
-    or not, and if so, the recurrence pattern and the next occurrences visible.
-    There is also a minigrid that highlights the occurrences."]
-    [:p
-     "Just like the POSIX ls tool, by default it hides any events not visible
-    in the calendar. If you wish to look at all events including hidden ones,
-    use "
-     [:code "ls all"]
-     " instead. You can also verbosely specify the default behavior with "
-     [:code "ls visible"] "."]]])
+  (render
+    (<<
+      [:div#help
+       [:p
+        "This is a smart calendar app that runs completely in your browser. It
+        is controlled by typing commands into the command area at the bottom."]
+       [:details {:open true} [:summary "Navigating the calendar"]
+        [:p "Type " [:code "next"] " or " [:code "prev"]
+         " to move the calendar view forward or backward by one week. When
+         followed with an integer, the calendar view is moved by that many
+         weeks. For example "
+         [:code "next 7"] " moves the calendar forward by 7 weeks."]
+        [:p "To go to a specific date, use the " [:code "goto"]
+         " command, followed by a date literal. There are many ways you can
+         specify a date literal. So all of these work: "
+         [:code "goto 20241001"] ", " [:code "goto 2024-10-01"] ", "
+         [:code "goto Oct 1, 2024"] ", " [:code "goto 01 Oct 2024"]
+         ". However you cannot specify the month as a number unless the year is
+         specified first. This is because some put the day before the month, and
+         some after, so a date like 10/01/2024 is inherently ambiguous."]]
+       [:details {:open true} [:summary "Adding events"]
+        [:p "The " [:code "add"]
+         " command is used to add new events. An event always has a name. Adding
+         an event with the same name as an existing event replaces it. An event
+         can be a single occurrence or a recurring event."]
+        [:p
+         "A single event
+         has its occurrence date specified using the "
+         [:code "on"] " keyword. So "
+         [:code "add \"Celebrate Jack's 60th birthday\" on 20241018"]
+         " creates a single event with that name and on that date."]
+        [:p "A recurring event has its recurrence pattern specified using the "
+         [:code "every"]
+         " keyword, followed by the recurrence period, which may be specified in
+         units of days, weeks, months, or years."]
+        [:p [:em "Day-based recurrence. "] "The command "
+         [:code "add \"Daily reflection\" every day"]
+         " is an example. The command "
+         [:code "add \"Take out the trash\" every 3 days"]
+         " is another example."]
+        [:p [:em "Week-based recurrence. "]
+         "Week-based recurrences are simply day-based recurrences where the
+         period is a multiple of 7. It allows you to specify the days in the
+         first 7 days of that period. The command "
+         [:code "add \"TGIF\" every week on Fri"]
+         " is an example. There may be multiple days specified, so "
+         [:code "add \"Go to the gym\" every week on Mon, Fri"]
+         " creates an event that repeats on Monday and Friday. (The repeated
+         days may be separated by commas or simply whitespace, so "
+         [:code "add \"Go to the gym\" every week on Mon Fri"]
+         " also works, but the two styles cannot be mixed.) The command "
+         [:code "add \"Get payslips\" every 2 weeks on Fri"]
+         " sets 14 days as the period of recurrence, so only the first Friday of
+         each period is specified."]
+        [:p [:em "Month-based recurrence. "]
+         "Month-based recurrences specify the period of recurrence in units of
+         months, as well as the selection of a day within a month. The command "
+         [:code "add \"Pay credit card\" every month on 28"]
+         " sets the recurrence period to be one month, and it specifies the 28th
+         day of each selected month. The command "
+         [:code
+          "add \"Review personal finances\" every 2 months on the first Saturday"]
+         " sets the recurrence period to be two months, and in the first month
+         of each period, specifies the first Saturday."]
+        [:p [:em "Year-based recurrence. "]
+         "Year-based recurrences similarly specify the period of recurrence in
+         units of years, as well as the selection of a day within a year. The
+         command "
+         [:code "add \"Celebrate Dad's birthday\" every year on Apr 30"]
+         " is an example. The command "
+         [:code
+          "add \"Pay property tax\" every year on the first Monday of Apr, Dec"]
+         " is another example."]]
+       [:details {:open true} [:summary "Listing and inspecting events"]
+        [:p "The " [:code "ls"]
+         " command can be used to list added events and inspect them. The output
+         is shown graphically, containing the name of the event, whether it is
+         recurrent or not, and if so, the recurrence pattern and the next
+         occurrences visible. There is also a minigrid that highlights the
+         occurrences."]
+        [:p
+         "Just like the POSIX ls tool, by default it hides any events not
+         visible in the calendar. If you wish to look at all events including
+         hidden ones, use "
+         [:code "ls all"]
+         " instead. You can also verbosely specify the default behavior with "
+         [:code "ls visible"] "."]]])))
 
-(defn ls-modal-component
+(defc ls-modal-component
   [show-invisible selected-or-nil]
-  (let [start (actual-start @start-date)
-        until (day-num-to-date (+ (* 7 @weeks-to-show) (:daynum start)))]
-    (into
-      [:div#ls-grid]
-      (mapcat
-        (fn [ev]
-          (if (or (nil? selected-or-nil) (contains? selected-or-nil (:name ev)))
-            (let [days-with-event
-                    (set (map :date (get-visible-events start until [ev])))]
-              (if (or show-invisible (seq days-with-event))
-                [(into [:div.ls-minigrid]
-                       (for [x (range (* 7 @weeks-to-show))]
-                         (let [date (day-num-to-date (+ x (:daynum start)))]
-                           ^{:key (:daynum date)}
-                           [:div.ls-minigrid-day
-                            {:class (if (days-with-event date)
-                                      "present"
-                                      "absent")}])))
-                 [:div.ls-desc [:h4 (:name ev)]
-                  (if-let [date (:single-occ ev)]
-                    [:p "On " (format-date-en-us date)]
-                    (if-let [recur-pat (:recurring ev)]
-                      [:details
-                       [:summary "Repeating " (format-recur-pat recur-pat)]
-                       (if-let [occs (seq (recurrent-event-occurrences recur-pat
-                                                                       (today)
-                                                                       start
-                                                                       until))]
-                         (into [:ul]
-                               (map #(vector :li (format-date-en-us %)) occs))
-                         [:p "No occurrences in visible date range."])]))]]))))
-        (sort-by :name gstr/intAwareCompare @events)))))
+  (bind weeks-to-show (sg/kv-lookup :ui :weeks-to-show))
+  (bind start (actual-start (sg/kv-lookup :ui :start-date)))
+  (bind until (day-num-to-date (+ (* 7 weeks-to-show) (:daynum start))))
+  (bind selected-events
+        (sg/query
+          (fn [{:keys [events], :as env}]
+            (->> events
+                 (vals)
+                 (filter #(or (nil? selected-or-nil)
+                              (contains? selected-or-nil (:name %))))
+                 (map #(assoc %
+                         :visible-occurrences
+                           (set (map :date
+                                  (get-visible-events start until [%])))))
+                 (map #(assoc %
+                         :visible-occurrences-daynums
+                           (set (map :daynum (:visible-occurrences %)))))
+                 (filter #(or show-invisible (seq (:visible-occurrences %))))
+                 (sort-by :name gstr/intAwareCompare)))))
+  (render
+    (<<
+      [:div#ls-grid
+       (sg/keyed-seq
+         selected-events
+         :name
+         (fn [ev]
+           (<<
+             [:div.ls-minigrid
+              (sg/simple-seq (range (* 7 weeks-to-show))
+                             (fn [x]
+                               (let [this-daynum (+ x (:daynum start))]
+                                 (<< [:div.ls-minigrid-day
+                                      {:class (if ((:visible-occurrences-daynums
+                                                     ev)
+                                                    this-daynum)
+                                                "present"
+                                                "absent")}]))))]
+             [:div.ls-desc [:h4 (:name ev)]
+              (if-let [date (:single-occ ev)]
+                (<< [:p "On " (format-date-en-us date)])
+                (if-let [recur-pat (:recurring ev)]
+                  (<<
+                    [:details
+                     [:summary "Repeating " (format-recur-pat recur-pat)]
+                     (if-let [occs (seq (:visible-occurrences ev))]
+                       (<< [:ul
+                            (sg/simple-seq
+                              occs
+                              (fn [occ] (<< [:li (format-date-en-us occ)])))])
+                       (<<
+                         [:p
+                          "No occurrences in visible date range."]))])))])))])))
 
-(defn config-modal-component
+(defc config-modal-component
   []
-  [:div#control [:p "Weeks to display: "]
-   [:input
-    {:type "range",
-     :value @weeks-to-show,
-     :min 1,
-     :max 60,
-     :on-change (fn [e]
-                  (let [new-value (js/parseInt (.. e -target -value))]
-                    (reset! weeks-to-show new-value)))}] [:p @weeks-to-show]])
+  (bind weeks-to-show (sg/kv-lookup :ui :weeks-to-show))
+  (render (<< [:div#control [:p "Weeks to display: "]
+               [:input
+                {:type "range",
+                 :value weeks-to-show,
+                 :min 1,
+                 :max 60,
+                 :on-change :modify-weeks-to-show}] [:p weeks-to-show]]))
+  (event :modify-weeks-to-show
+         [env _ e]
+         (let [new-value (js/parseInt (.. e -target -value) 10)]
+           (sg/run-tx env
+                      {:e :modify-weeks-to-show, :weeks-to-show new-value}))))
+
+(defn execute-input-impl
+  [env input]
+  (try
+    (if (empty? (.trim input))
+      env
+      (let [parsed (transform-parsed (cmdline-parser input))]
+        (when VERBOSE (js/console.log "Currently parsed:" (pr-str parsed)))
+        (if (insta/failure? parsed)
+          (show-message env (pr-str parsed))
+          (match parsed
+            [:cmd [:next-cmd]] (update-in env [:ui :start-date] next-week)
+            [:cmd [:next-cmd n]]
+              (update-in env [:ui :start-date] #(next-week n %))
+            [:cmd [:prev-cmd]] (update-in env [:ui :start-date] prev-week)
+            [:cmd [:prev-cmd n]]
+              (update-in env [:ui :start-date] #(prev-week n %))
+            [:cmd [:goto-cmd ymd]] (assoc-in env [:ui :start-date] ymd)
+            [:cmd [:add-cmd name date-spec]] (add-event env name date-spec)
+            [:cmd [:rm-cmd name]] (let [old-count (count (:events env))
+                                        new-env (update env :events dissoc name)
+                                        new-count (count (:events new-env))
+                                        removals (- old-count new-count)]
+                                    (show-message new-env
+                                                  (str "Removed "
+                                                       (if (== 1 removals)
+                                                         "one event."
+                                                         (str removals
+                                                              " events.")))))
+            [:cmd [:help-cmd]] (show-modal env :help)
+            [:cmd [:config-cmd]] (show-modal env :config)
+            [:cmd [:ls-cmd]] (show-modal env :ls-visible)
+            [:cmd [:ls-cmd [t]]] (show-modal env t)
+            [:cmd [:ls-cmd [:ls-only & exprs]]]
+              (let [selected-events
+                      (eval-str-exprs exprs (map :name (vals (:events env))))]
+                (if (empty? selected-events)
+                  (show-message
+                    env
+                    "No events selected for display in \"ls only\" command.")
+                  (show-modal env [:ls-only selected-events])))
+            :else (show-message env (str "TODO: " (pr-str parsed)))))))
+    (catch :default e
+      (show-message env
+                    (if (and (map? e) (:date-outside-range e))
+                      "The specified date is outside the supported range."
+                      "An unknown error occurred.")))))
 
 (defn execute-input
-  [input]
-  (reset! cmdline-output "")
-  (reset! modal-shown false)
-  (try
-    (when-not (empty? (.trim input))
-      (let [parsed (transform-parsed (cmdline-parser input))]
-        (if (insta/failure? parsed)
-          (reset! cmdline-output (pr-str parsed))
-          (match parsed
-            [:cmd [:next-cmd]] (swap! start-date next-week)
-            [:cmd [:next-cmd n]] (swap! start-date #(next-week n %))
-            [:cmd [:prev-cmd]] (swap! start-date prev-week)
-            [:cmd [:prev-cmd n]] (swap! start-date #(prev-week n %))
-            [:cmd [:goto-cmd ymd]] (reset! start-date ymd)
-            [:cmd [:add-cmd name date-spec]]
-              (swap! events #(add-event name date-spec %))
-            [:cmd [:rm-cmd name]]
-              (let [[old new] (swap-vals! events #(remove-events name %))
-                    removals (- (count old) (count new))]
-                (reset! cmdline-output (str "Removed "
-                                            (if (== 1 removals)
-                                              "one event."
-                                              (str removals " events.")))))
-            [:cmd [:help-cmd]] (show-modal :help)
-            [:cmd [:config-cmd]] (show-modal :config)
-            [:cmd [:ls-cmd]] (show-modal :ls-visible)
-            [:cmd [:ls-cmd [t]]] (show-modal t)
-            [:cmd [:ls-cmd [:ls-only & exprs]]]
-              (let [selected-events (eval-str-exprs exprs (map :name @events))]
-                (if (empty? selected-events)
-                  (reset! cmdline-output
-                    "No events selected for display in \"ls only\" command.")
-                  (show-modal [:ls-only selected-events])))
-            :else (js/window.alert (str "TODO: " (pr-str parsed)))))))
-    (catch :default e
-      (reset! cmdline-output
-        (if (and (map? e) (:date-outside-range e))
-          "The specified date is outside the supported range."
-          "An unknown error occurred.")))))
+  [env {:keys [input]}]
+  (-> env
+      (assoc-in [:ui :cmdline-output] "")
+      (assoc-in [:ui :cmdline-input] "")
+      (hide-modal nil)
+      (execute-input-impl input)))
+(sg/reg-event :app :execute-input execute-input)
 
-(defn explain-input-component
+(defc explain-input-component
   [input start until]
-  (let [parsed (transform-parsed (cmdline-parser input))]
+  (bind parsed (transform-parsed (cmdline-parser input)))
+  (render
     (if-not (insta/failure? parsed)
       (match parsed
         [:cmd [:next-cmd]] "Scroll down by one week"
@@ -932,133 +1021,157 @@
         [:cmd [:config-cmd]] "Configure calendar display"
         :else (pr-str parsed)))))
 
-(defn cmdline-component
+(defn cmdline-input-changed
+  [env {:keys [processed-input]}]
+  (assoc-in env [:ui :cmdline-input] processed-input))
+(sg/reg-event :app :cmdline-input-changed cmdline-input-changed)
+
+(defc cmdline-component
   [start until]
-  (let [textarea-ref (atom nil)
-        textarea-change
-          (fn [ev]
-            ;; We do not support tab characters for now. The
-            ;; browser is supposed to interpret the tab character
-            ;; as focusing on the next input and should not
-            ;; result in any real tab characters.
-            (let [val (-> ev
-                          .-target
-                          .-value
-                          (.replaceAll "\t" ""))]
-              ;; The handling of the prompt is somewhat ad-hoc
-              ;; and arbitrary. Basically the <textarea> element
-              ;; doesn't have a way to restrict editing to some
-              ;; portion of it. So the prompt is included.
-              (cond
-                ;; The user keeps the prompt and appends to it. Happy
-                ;; case.
-                (.startsWith val cmdline-prompt)
-                  (let [input (.substring val cmdline-prompt-length)]
-                    (if (> (.indexOf input "\n") -1)
-                      (do (reset! cmdline-input "")
-                          (execute-input (.replaceAll input "\n" "")))
-                      (reset! cmdline-input input)))
-                ;; The user tries to insert at the beginning.
-                (.endsWith val cmdline-prompt)
-                  (do (reset! cmdline-input (-> val
-                                                (.slice
-                                                  0
-                                                  (- 0 cmdline-prompt-length))
-                                                (.replaceAll "\n" "")))
-                      (when-let [el @textarea-ref]
-                        (let [end (+ (.-length cmdline-input)
-                                     cmdline-prompt-length)]
-                          (.setSelectionRange el end end))))
-                ;; The user somehow removed the prompt and
-                ;; replaced it with something short (hopefully
-                ;; just a few characters).
-                (< (.-length val) cmdline-prompt-length)
-                  (do (reset! cmdline-input (-> val
-                                                (.replaceAll ">" "")
-                                                (.replaceAll " " "")
-                                                (.replaceAll "\n" "")))
-                      (when-let [el @textarea-ref]
-                        (let [end (+ (.-length cmdline-input)
-                                     cmdline-prompt-length)]
-                          (.setSelectionRange el end end)))))))
-        textarea-select (fn [ev]
-                          (let [start (-> ev
-                                          .-target
-                                          .-selectionStart)
-                                end (-> ev
-                                        .-target
-                                        .-selectionEnd)]
-                            (when-let [el @textarea-ref]
-                              (.setSelectionRange
-                                el
-                                (max start cmdline-prompt-length)
-                                (max end cmdline-prompt-length)))))]
-    (fn [start until]
+  (bind input (sg/kv-lookup :ui :cmdline-input))
+  (bind parsed (cmdline-parser input :total true :unhide :all))
+  (bind did-fail (insta/failure? parsed))
+  (render
+    (<<
       [:div#cmdline
        [:textarea#cmdline-in.cmdline
-        {:ref #(reset! textarea-ref %),
-         :spell-check "false",
-         :value (str cmdline-prompt @cmdline-input),
-         :on-change textarea-change,
-         :on-select textarea-select}]
-       (let [input @cmdline-input
-             parsed (cmdline-parser input :total true :unhide :all)
-             did-fail (insta/failure? parsed)]
-         [:pre#cmdline-disp.cmdline
-          {:aria-hidden "true",
-           :class (if (empty? input) "" (if did-fail "failed" "succeeded"))}
-          [:code cmdline-prompt
-           (if (seq parsed) [cmdline-display-component parsed])
-           (if-not (empty? input)
-             [:span.comment " # "
-              (if did-fail
-                "Parse Error"
-                [explain-input-component input start until])])]])])))
+        {:spell-check "false",
+         :autofocus true,
+         :value (str cmdline-prompt input),
+         :on-input {:e :textarea-change},
+         ;; React synthesizes select event for many other event types. See
+         ;; https://github.com/facebook/react/blob/7c8e5e7ab8bb63de911637892392c5efd8ce1d0f/packages/react-dom-bindings/src/events/plugins/SelectEventPlugin.js#L150
+         :on-select {:e :textarea-select},
+         :on-focusin {:e :textarea-select},
+         :on-mouseup {:e :textarea-select},
+         :on-dragend {:e :textarea-select},
+         :on-keydown {:e :textarea-select},
+         :on-keyup {:e :textarea-select}}]
+       [:pre#cmdline-disp.cmdline
+        {:aria-hidden "true",
+         :class (if (empty? input) "" (if did-fail "failed" "succeeded"))}
+        [:code cmdline-prompt
+         (if (seq parsed) (cmdline-display-component parsed))
+         (if-not (empty? input)
+           (<< [:span.comment " # "
+                (if did-fail
+                  "Parse Error"
+                  (explain-input-component input start until))]))]]]))
+  (event :textarea-change
+         [env _ e]
+         ;; We do not support tab characters for now. The
+         ;; browser is supposed to interpret the tab character
+         ;; as focusing on the next input and should not
+         ;; result in any real tab characters.
+         (let [val (-> e
+                       .-target
+                       .-value
+                       (.replaceAll "\t" ""))]
+           (when VERBOSE (js/console.log "Raw event.target.value" val))
+           ;; The handling of the prompt is somewhat ad-hoc
+           ;; and arbitrary. Basically the <textarea> element
+           ;; doesn't have a way to restrict editing to some
+           ;; portion of it. So the prompt is included.
+           (if
+             ;; The user keeps the prompt and appends to it. Happy case.
+             (.startsWith val cmdline-prompt)
+             (let [input (.substring val cmdline-prompt-length)]
+               (if (> (.indexOf input "\n") -1)
+                 ;; In Grove, controlled components behave differently from
+                 ;; React. We need to manually set the DOM value. This is
+                 ;; because the DOM value is changed by the user and yet we
+                 ;; want it to stay the same. Since the framework sees that
+                 ;; the value is the same as before, it will not set the
+                 ;; actual DOM value again. See also a similar issue in
+                 ;; Preact:
+                 ;; Https://www.jovidecroock.com/blog/controlled-inputs.
+                 ;; This is why we need manual set!.
+                 (do (set! (.. e -target -value) cmdline-prompt)
+                     (sg/run-tx env
+                                {:e :execute-input,
+                                 :input (.replaceAll input "\n" "")}))
+                 (do (set! (.. e -target -value) (str cmdline-prompt input))
+                     (sg/run-tx env
+                                {:e :cmdline-input-changed,
+                                 :processed-input input}))))
+             ;; The user is a bit mischievous.
+             (let [input (-> val
+                             (remove-subsequence cmdline-prompt)
+                             (.replaceAll "\n" ""))]
+               (set! (.. e -target -value) (str cmdline-prompt input))
+               (sg/run-tx env
+                          {:e :cmdline-input-changed,
+                           :processed-input input})))))
+  (event :textarea-select
+         [env _ e]
+         (let [start (-> e
+                         .-target
+                         .-selectionStart)
+               end (-> e
+                       .-target
+                       .-selectionEnd)
+               correct-start (max start cmdline-prompt-length)
+               correct-end (max end cmdline-prompt-length)]
+           (when-not (and (== start correct-start) (== end correct-end))
+             (.setSelectionRange (.-target e) correct-start correct-end)))
+         env))
 
-(defn cmdline-output-component
+(defc cmdline-output-component
   []
-  [:div#cmdline-out
-   (let [o @cmdline-output] (if (seq o) [:pre [:code (.trimEnd o)]]))])
+  (bind o (sg/kv-lookup :ui :cmdline-output))
+  (render (<< [:div#cmdline-out
+               (if (seq o) (<< [:pre [:code (.trimEnd o)]]))])))
 
-(defn modal-component
+(defc modal-component
   []
-  (match @modal-content
-    nil [:div#modal.hidden]
-    :help [:div#modal.help {:class (if @modal-shown "" "hidden")}
-           [help-modal-component]]
-    :config [:div#modal.config {:class (if @modal-shown "" "hidden")}
-             [config-modal-component]]
-    :ls-visible [:div#modal.ls {:class (if @modal-shown "" "hidden")}
-                 [ls-modal-component false nil]]
-    :ls-all [:div#modal.ls {:class (if @modal-shown "" "hidden")}
-             [ls-modal-component true nil]]
-    [:ls-only selected] [:div#modal.ls {:class (if @modal-shown "" "hidden")}
-                         [ls-modal-component true selected]]))
+  (bind modal-content (sg/kv-lookup :ui :modal-content))
+  (bind modal-shown (sg/kv-lookup :ui :modal-shown))
+  (bind modal-class (if modal-shown "" "hidden"))
+  (render (<< [:div#modal {:class modal-class}
+               (match modal-content
+                 nil nil
+                 :help (help-modal-component)
+                 :config (config-modal-component)
+                 :ls-visible (ls-modal-component false nil)
+                 :ls-all (ls-modal-component true nil)
+                 [:ls-only selected] (ls-modal-component true selected))])))
 
-(defn calendar-component
+(defc calendar-component
   []
-  (let [start (actual-start @start-date)
-        until (day-num-to-date (+ (* 7 @weeks-to-show) (:daynum start)))]
-    [:div#cal [modal-component]
-     [:div#table {:on-click #(hide-modal)} [:div.td.th "Sun"] [:div.td.th "Mon"]
-      [:div.td.th "Tue"] [:div.td.th "Wed"] [:div.td.th "Thu"]
-      [:div.td.th "Fri"] [:div.td.th "Sat"]
-      (let [days-with-events (get-days-with-events start until @events)]
-        (doall (for [x (range (* 7 @weeks-to-show))]
-                 (let [date (day-num-to-date (+ x (:daynum start)))]
-                   ^{:key (:daynum date)}
-                   [day-component date (= x 0) (get days-with-events date)]))))]
-     [:div#cmdline-inout [cmdline-output-component]
-      [cmdline-component start until]]]))
-
-(defn home-page [] [calendar-component])
+  (bind weeks-to-show (sg/kv-lookup :ui :weeks-to-show))
+  (bind start (actual-start (sg/kv-lookup :ui :start-date)))
+  (bind until (day-num-to-date (+ (* 7 weeks-to-show) (:daynum start))))
+  (bind days-with-events
+        (sg/query (fn [{:keys [events]}]
+                    (get-days-with-events start until (vals events)))))
+  (effect :mount
+          [env]
+          ;; Later we are going to load events from local storage.
+  )
+  (render (<< [:div#cal (modal-component)
+               [:div#table {:on-click {:e :hide-modal}} [:div.td.th "Sun"]
+                [:div.td.th "Mon"] [:div.td.th "Tue"] [:div.td.th "Wed"]
+                [:div.td.th "Thu"] [:div.td.th "Fri"] [:div.td.th "Sat"]
+                (sg/keyed-seq (->> (* 7 weeks-to-show)
+                                   (range)
+                                   (map #(+ % (:daynum start)))
+                                   (map day-num-to-date))
+                              :daynum
+                              (fn [date]
+                                (day-component date
+                                               (= (:daynum start)
+                                                  (:daynum date))
+                                               (get days-with-events date))))]
+               [:div#cmdline-inout (cmdline-output-component)
+                (cmdline-component start until)]])))
 
 ;; -------------------------
-;; Initialize app
+;; Initialize and hot reload
 
-(defn mount-root
+(defn render!
   []
-  (when VERBOSE (println "Initial app state " @app-state))
-  (dom/render [home-page] (.getElementById js/document "app")))
+  (sg/render rt-ref (.getElementById js/document "app") (calendar-component)))
 
-(defn ^:dev/after-load init! [] (mount-root))
+(defn init! [] (init-ui-state!) (init-events-state!) (render!))
+
+(defn ^:dev/after-load reload! [] (render!))

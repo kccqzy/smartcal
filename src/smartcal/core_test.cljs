@@ -713,3 +713,12 @@
   (is (= (c/eval-str-exprs ["x" {:str-glob-fun "*y"}]
                            ["a" "x" "xy" "y" "yz" "z"])
          #{"x" "y" "xy"})))
+
+(deftest remove-subsequence
+  (is (= (c/remove-subsequence "" ">>> ") ""))
+  (is (= (c/remove-subsequence ">>> " ">>> ") ""))
+  (is (= (c/remove-subsequence ">>> a" ">>> ") "a"))
+  (is (= (c/remove-subsequence "a>>> " ">>> ") "a"))
+  (is (= (c/remove-subsequence ">p>> " ">>> ") "p"))
+  (is (= (c/remove-subsequence "a>b>>c " ">>> ") "abc"))
+  (is (= (c/remove-subsequence "ab>>c " ">>> ") "abc ")))
