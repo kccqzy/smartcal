@@ -951,30 +951,27 @@
         (when VERBOSE (js/console.log "Currently parsed:" (pr-str parsed)))
         (if (insta/failure? parsed)
           (show-message env (pr-str parsed))
-          (match parsed
-            [:cmd [:next-cmd]] (update-in env [:ui :start-date] next-week)
-            [:cmd [:next-cmd n]]
-              (update-in env [:ui :start-date] #(next-week n %))
-            [:cmd [:prev-cmd]] (update-in env [:ui :start-date] prev-week)
-            [:cmd [:prev-cmd n]]
-              (update-in env [:ui :start-date] #(prev-week n %))
-            [:cmd [:goto-cmd ymd]] (assoc-in env [:ui :start-date] ymd)
-            [:cmd [:add-cmd name date-spec]] (add-event env name date-spec)
-            [:cmd [:rm-cmd name]] (let [old-count (count (:events env))
-                                        new-env (update env :events dissoc name)
-                                        new-count (count (:events new-env))
-                                        removals (- old-count new-count)]
-                                    (show-message new-env
-                                                  (str "Removed "
-                                                       (if (== 1 removals)
-                                                         "one event."
-                                                         (str removals
-                                                              " events.")))))
-            [:cmd [:help-cmd]] (show-modal env :help)
-            [:cmd [:config-cmd]] (show-modal env :config)
-            [:cmd [:ls-cmd]] (show-modal env :ls-visible)
-            [:cmd [:ls-cmd [t]]] (show-modal env t)
-            [:cmd [:ls-cmd [:ls-only & exprs]]]
+          (match (fnext parsed)
+            [:next-cmd] (update-in env [:ui :start-date] next-week)
+            [:next-cmd n] (update-in env [:ui :start-date] #(next-week n %))
+            [:prev-cmd] (update-in env [:ui :start-date] prev-week)
+            [:prev-cmd n] (update-in env [:ui :start-date] #(prev-week n %))
+            [:goto-cmd ymd] (assoc-in env [:ui :start-date] ymd)
+            [:add-cmd name date-spec] (add-event env name date-spec)
+            [:rm-cmd name] (let [old-count (count (:events env))
+                                 new-env (update env :events dissoc name)
+                                 new-count (count (:events new-env))
+                                 removals (- old-count new-count)]
+                             (show-message new-env
+                                           (str "Removed "
+                                                (if (== 1 removals)
+                                                  "one event."
+                                                  (str removals " events.")))))
+            [:help-cmd] (show-modal env :help)
+            [:config-cmd] (show-modal env :config)
+            [:ls-cmd] (show-modal env :ls-visible)
+            [:ls-cmd [t]] (show-modal env t)
+            [:ls-cmd [:ls-only & exprs]]
               (let [selected-events
                       (eval-str-exprs exprs (map :name (vals (:events env))))]
                 (if (empty? selected-events)
@@ -1003,22 +1000,21 @@
   (bind parsed (transform-parsed (cmdline-parser input)))
   (render
     (if-not (insta/failure? parsed)
-      (match parsed
-        [:cmd [:next-cmd]] "Scroll down by one week"
-        [:cmd [:next-cmd n]] (str "Scroll down by " n " weeks")
-        [:cmd [:prev-cmd]] "Scroll up by one week"
-        [:cmd [:prev-cmd n]] (str "Scroll up by " n " weeks")
-        [:cmd [:goto-cmd date]] (str "Go to date " (format-date-en-us date))
-        [:cmd [:add-cmd name occ]] (str "Add "
-                                        (format-event name occ start until))
-        [:cmd [:rm-cmd name]] (str "Remove events named \"" name "\"")
-        [:cmd [:ls-cmd]] "List events visible in the current view"
-        [:cmd [:ls-cmd [:ls-all]]] "List all events"
-        [:cmd [:ls-cmd [:ls-visible]]] "List events visible in the current view"
-        [:cmd [:ls-cmd [:ls-only & exprs]]] (str "List events that are "
-                                                 (format-str-exprs exprs))
-        [:cmd [:help-cmd]] "Show help"
-        [:cmd [:config-cmd]] "Configure calendar display"
+      (match (fnext parsed)
+        [:next-cmd] "Scroll down by one week"
+        [:next-cmd n] (str "Scroll down by " n " weeks")
+        [:prev-cmd] "Scroll up by one week"
+        [:prev-cmd n] (str "Scroll up by " n " weeks")
+        [:goto-cmd date] (str "Go to date " (format-date-en-us date))
+        [:add-cmd name occ] (str "Add " (format-event name occ start until))
+        [:rm-cmd name] (str "Remove events named \"" name "\"")
+        [:ls-cmd] "List events visible in the current view"
+        [:ls-cmd [:ls-all]] "List all events"
+        [:ls-cmd [:ls-visible]] "List events visible in the current view"
+        [:ls-cmd [:ls-only & exprs]] (str "List events that are "
+                                          (format-str-exprs exprs))
+        [:help-cmd] "Show help"
+        [:config-cmd] "Configure calendar display"
         :else (pr-str parsed)))))
 
 (defn cmdline-input-changed
