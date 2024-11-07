@@ -452,13 +452,13 @@
 
 (defn eval-str-exprs
   [str-exprs event-names]
-  (let [regex (js/RegExp. (str "^"
+  (let [regex (js/RegExp. (str "^("
                                (cstr/join "|"
                                           (map #(if-let [pat (:str-glob-fun %)]
                                                   (simplified-glob-to-regex pat)
                                                   (gstr/regExpEscape %))
                                             str-exprs))
-                               "$"))]
+                               ")$"))]
     (into #{} (filter #(.test regex %) event-names))))
 
 ;; -------------------------
@@ -466,12 +466,14 @@
 
 (def history-limit 500)
 
-;; This section implements the following history features: (a) when a command is
+;; This section implements the following history features: (a) when a command
+;; is
 ;; executed with no parse errors, it is added to the history; (b) the user can
 ;; search the history entries backwards and forwards using the arrow key. The
 ;; search is inspired by the fish shell. It has complex semantics:
 ;;
-;; When the user is typing a command input and it is non-empty, it is considered
+;; When the user is typing a command input and it is non-empty, it is
+;; considered
 ;; as a prefix with which to search the history. Every additional character
 ;; typed by the user further restricts the search.
 ;;
