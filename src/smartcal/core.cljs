@@ -461,6 +461,21 @@
                                ")$"))]
     (into #{} (filter #(.test regex %) event-names))))
 
+(defn align-sorted-seqs
+  [seq1 seq2]
+  (if-let [first1 (first seq1)]
+    (if-let [first2 (first seq2)]
+      (cond (= first1 first2) (lazy-seq (cons [first1 first2]
+                                              (align-sorted-seqs (rest seq1)
+                                                                 (rest seq2))))
+            (< first1 first2) (lazy-seq (cons [first1 nil]
+                                              (align-sorted-seqs (rest seq1)
+                                                                 seq2)))
+            :else (lazy-seq (cons [nil first2]
+                                  (align-sorted-seqs seq1 (rest seq2)))))
+      (map #(vector % nil) seq1))
+    (map #(vector nil %) seq2)))
+
 ;; -------------------------
 ;; Command line history and search
 
@@ -1063,11 +1078,10 @@
                               (contains? selected-or-nil (:name %))))
                  (map #(assoc %
                          :visible-occurrences
-                           (set (map :date
-                                  (get-visible-events start until [%])))))
+                           (map :date (get-visible-events start until [%]))))
                  (map #(assoc %
                          :visible-occurrences-daynums
-                           (set (map :daynum (:visible-occurrences %)))))
+                           (map :daynum (:visible-occurrences %))))
                  (filter #(or show-invisible (seq (:visible-occurrences %))))
                  (sort-by :name gstr/intAwareCompare)))))
   (render
@@ -1079,15 +1093,14 @@
          (fn [ev]
            (<<
              [:div.ls-minigrid
-              (sg/simple-seq (range (* 7 weeks-to-show))
-                             (fn [x]
-                               (let [this-daynum (+ x (:daynum start))]
-                                 (<< [:div.ls-minigrid-day
-                                      {:class (if ((:visible-occurrences-daynums
-                                                     ev)
-                                                    this-daynum)
-                                                "present"
-                                                "absent")}]))))]
+              (sg/simple-seq
+                (align-sorted-seqs (range (:daynum start)
+                                          (+ (:daynum start)
+                                             (* 7 weeks-to-show)))
+                                   (:visible-occurrences-daynums ev))
+                (fn [[this-daynum event-daynum]]
+                  (<< [:div.ls-minigrid-day
+                       {:class (if (nil? event-daynum) "absent" "present")}])))]
              [:div.ls-desc [:h4 (:name ev)]
               (if-let [date (:single-occ ev)]
                 (<< [:p "On " (format-date-en-us date)])

@@ -911,3 +911,10 @@
              (assoc :cmdline-input "aac")
              (assoc :hist-cur-idx 1)
              (assoc :hist-cur-prefix "aa")))))
+
+(deftest align-sorted-seqs
+  (is (= (c/align-sorted-seqs [] []) []))
+  (is (= (c/align-sorted-seqs [1 2] []) [[1 nil] [2 nil]]))
+  (is (= (c/align-sorted-seqs [] [1 2]) [[nil 1] [nil 2]]))
+  (is (= (c/align-sorted-seqs [1 2 3] [1 2 4]) [[1 1] [2 2] [3 nil] [nil 4]]))
+  (is (= (c/align-sorted-seqs [1 2] [0 3]) [[nil 0] [1 nil] [2 nil] [nil 3]])))
