@@ -725,172 +725,188 @@
 
 (deftest history-add
   (is (= (c/history-add c/history-initial-state "abcd")
-         (assoc c/history-initial-state :entries ["abcd"])))
+         (assoc c/history-initial-state :hist-entries ["abcd"])))
   (is (= (-> c/history-initial-state
              (c/history-add "abcd")
              (c/history-add "efgh"))
-         (assoc c/history-initial-state :entries ["abcd" "efgh"]))
+         (assoc c/history-initial-state :hist-entries ["abcd" "efgh"]))
       "skips when the new history is the same as the last")
   (is (= (-> c/history-initial-state
              (c/history-add "abcd")
              (c/history-add "efgh")
              (c/history-add "efgh")
              (c/history-add "abcd"))
-         (assoc c/history-initial-state :entries ["abcd" "efgh" "abcd"]))
+         (assoc c/history-initial-state :hist-entries ["abcd" "efgh" "abcd"]))
       "does not skip when the new history is the same as the first")
-  (is (= (-> c/history-initial-state
-             (c/history-add "a" 3)
-             (c/history-add "c" 3)
-             (c/history-add "e" 3)
-             (c/history-add "b" 3))
-         (assoc c/history-initial-state :entries ["c" "e" "b"]))
+  (is (= (let [truncated-history (reduce c/history-add
+                                   c/history-initial-state
+                                   (range (inc c/history-limit)))]
+           (:hist-entries truncated-history))
+         (range 1 (inc c/history-limit)))
       "truncates from the front when exceeding the limit"))
 
 (deftest history-search
-  (is (= (:cur-idx (c/history-search c/history-initial-state "abc" true)) nil))
-  (is (= (:cur-idx (c/history-search (c/history-add c/history-initial-state
-                                                    "abc")
-                                     "abc"
-                                     true))
+  (is (= (:hist-cur-idx (c/history-search c/history-initial-state "abc" true))
+         nil))
+  (is (= (:hist-cur-idx (c/history-search (c/history-add c/history-initial-state
+                                                         "abc")
+                                          "abc"
+                                          true))
          0))
   (is (thrown? js/Error
-               (:cur-idx (c/history-search
-                           (c/history-add c/history-initial-state "abc")
-                           "abc"
-                           false))))
-  (is (= (:cur-idx (-> c/history-initial-state
-                       (c/history-add "abc")
-                       (c/history-add "def")
-                       (c/history-add "abc")
-                       (c/history-search "def" true)))
+               (:hist-cur-idx (c/history-search
+                                (c/history-add c/history-initial-state "abc")
+                                "abc"
+                                false))))
+  (is (= (:hist-cur-idx (-> c/history-initial-state
+                            (c/history-add "abc")
+                            (c/history-add "def")
+                            (c/history-add "abc")
+                            (c/history-search "def" true)))
          1))
-  (is (= (:cur-idx (-> c/history-initial-state
-                       (c/history-add "abc")
-                       (c/history-add "def")
-                       (c/history-add "abc")
-                       (c/history-search "xxx" true)))
+  (is (= (:hist-cur-idx (-> c/history-initial-state
+                            (c/history-add "abc")
+                            (c/history-add "def")
+                            (c/history-add "abc")
+                            (c/history-search "xxx" true)))
          nil)
       "search not found")
-  (is (= (:cur-idx (-> c/history-initial-state
-                       (c/history-add "abc")
-                       (c/history-add "def")
-                       (c/history-add "abc")
-                       (c/history-search "abc" true)))
+  (is (= (:hist-cur-idx (-> c/history-initial-state
+                            (c/history-add "abc")
+                            (c/history-add "def")
+                            (c/history-add "abc")
+                            (c/history-search "abc" true)))
          2))
-  (is (= (:cur-idx (-> c/history-initial-state
-                       (c/history-add "abc")
-                       (c/history-add "agh")
-                       (c/history-add "abc")
-                       (c/history-search "a" true)))
+  (is (= (:hist-cur-idx (-> c/history-initial-state
+                            (c/history-add "abc")
+                            (c/history-add "agh")
+                            (c/history-add "abc")
+                            (c/history-search "a" true)))
          2))
-  (is (= (:cur-idx (-> c/history-initial-state
-                       (c/history-add "aeg")
-                       (c/history-add "xxx")
-                       (c/history-add "abc")
-                       (c/history-search "a" true)
-                       (c/history-search "a" true)))
+  (is (= (:hist-cur-idx (-> c/history-initial-state
+                            (c/history-add "aeg")
+                            (c/history-add "xxx")
+                            (c/history-add "abc")
+                            (c/history-search "a" true)
+                            (c/history-search "a" true)))
          0))
-  (is (= (:cur-idx (-> c/history-initial-state
-                       (c/history-add "aeg")
-                       (c/history-add "xxx")
-                       (c/history-add "abc")
-                       (c/history-search "a" true)
-                       (c/history-search "a" true)
-                       (c/history-search "a" true)))
+  (is (= (:hist-cur-idx (-> c/history-initial-state
+                            (c/history-add "aeg")
+                            (c/history-add "xxx")
+                            (c/history-add "abc")
+                            (c/history-search "a" true)
+                            (c/history-search "a" true)
+                            (c/history-search "a" true)))
          0))
-  (is (= (:cur-idx (-> c/history-initial-state
-                       (c/history-add "abc")
-                       (c/history-add "xxx")
-                       (c/history-add "abc")
-                       (c/history-search "a" true)
-                       (c/history-search "a" true)
-                       (c/history-search "a" false)))
-         2)))
+  (is (= (:hist-cur-idx (-> c/history-initial-state
+                            (c/history-add "abc")
+                            (c/history-add "xxx")
+                            (c/history-add "abc")
+                            (c/history-search "a" true)
+                            (c/history-search "a" true)
+                            (c/history-search "a" false)))
+         2))
+  (is (thrown? js/Error
+               (-> c/history-initial-state
+                   (c/history-add "abc")
+                   (c/history-add "xxx")
+                   (c/history-add "abc")
+                   (c/history-search "a" true)
+                   (c/history-search "x" true))))
+  (is (= (:hist-cur-idx (-> c/history-initial-state
+                            (c/history-add "abc")
+                            (c/history-add "xxx")
+                            (c/history-add "abc")
+                            (c/history-search "a" true)
+                            (c/history-search "a" false)
+                            (c/history-search "x" true)))
+         1)))
 
 (def fake-history ["abc" "aac" "bbc" "ccd" "zzz"])
 
-(def fake-history-state (assoc c/history-initial-state :entries fake-history))
+(def fake-history-state
+  (assoc c/history-initial-state :hist-entries fake-history))
 
 (deftest history-search-current-completion
-  (is (= (c/history-search-current-completion
-           {:cmdline-input "", :cmdline-history fake-history-state})
+  (is (= (c/history-search-current-completion (assoc fake-history-state
+                                                :cmdline-input ""))
          nil)
       "no search when input empty")
-  (is (= (c/history-search-current-completion
-           {:cmdline-input "z", :cmdline-history fake-history-state})
+  (is (= (c/history-search-current-completion (assoc fake-history-state
+                                                :cmdline-input "z"))
          "zzz"))
-  (is (= (c/history-search-current-completion
-           {:cmdline-input "c", :cmdline-history fake-history-state})
+  (is (= (c/history-search-current-completion (assoc fake-history-state
+                                                :cmdline-input "c"))
          "ccd"))
-  (is (= (c/history-search-current-completion
-           {:cmdline-input "a", :cmdline-history fake-history-state})
+  (is (= (c/history-search-current-completion (assoc fake-history-state
+                                                :cmdline-input "a"))
          "aac")))
 
 (deftest history-search-navigate
-  (is (= (-> {:cmdline-input "", :cmdline-history fake-history-state}
+  (is (= (-> (assoc fake-history-state :cmdline-input "")
              (c/history-search-navigate true))
-         {:cmdline-input "zzz",
-          :cmdline-history (-> fake-history-state
-                               (assoc :cur-idx 4)
-                               (assoc :cur-prefix ""))}))
-  (is (= (-> {:cmdline-input "z", :cmdline-history fake-history-state}
+         (-> fake-history-state
+             (assoc :cmdline-input "zzz")
+             (assoc :hist-cur-idx 4)
+             (assoc :hist-cur-prefix ""))))
+  (is (= (-> (assoc fake-history-state :cmdline-input "z")
              (c/history-search-navigate true))
-         {:cmdline-input "zzz",
-          :cmdline-history (-> fake-history-state
-                               (assoc :cur-idx 4)
-                               (assoc :cur-prefix "z"))}))
-  (is (= (-> {:cmdline-input "z", :cmdline-history fake-history-state}
+         (-> fake-history-state
+             (assoc :cmdline-input "zzz")
+             (assoc :hist-cur-idx 4)
+             (assoc :hist-cur-prefix "z"))))
+  (is (= (-> (assoc fake-history-state :cmdline-input "z")
              ;; Navigate up twice. No more matches.
              (c/history-search-navigate true)
              (c/history-search-navigate true))
-         {:cmdline-input "zzz",
-          :cmdline-history (-> fake-history-state
-                               (assoc :cur-idx 4)
-                               (assoc :cur-prefix "z"))}))
-  (is (= (-> {:cmdline-input "z", :cmdline-history fake-history-state}
+         (-> fake-history-state
+             (assoc :cmdline-input "zzz")
+             (assoc :hist-cur-idx 4)
+             (assoc :hist-cur-prefix "z"))))
+  (is (= (-> (assoc fake-history-state :cmdline-input "z")
              ;; Navigate up twice. No more matches.
              (c/history-search-navigate true)
              (c/history-search-navigate true))
-         {:cmdline-input "zzz",
-          :cmdline-history (-> fake-history-state
-                               (assoc :cur-idx 4)
-                               (assoc :cur-prefix "z"))}))
-  (is (= (-> {:cmdline-input "a", :cmdline-history fake-history-state}
+         (-> fake-history-state
+             (assoc :cmdline-input "zzz")
+             (assoc :hist-cur-idx 4)
+             (assoc :hist-cur-prefix "z"))))
+  (is (= (-> (assoc fake-history-state :cmdline-input "a")
              (c/history-search-navigate true))
-         {:cmdline-input "aac",
-          :cmdline-history (-> fake-history-state
-                               (assoc :cur-idx 1)
-                               (assoc :cur-prefix "a"))}))
-  (is (= (-> {:cmdline-input "a", :cmdline-history fake-history-state}
+         (-> fake-history-state
+             (assoc :cmdline-input "aac")
+             (assoc :hist-cur-idx 1)
+             (assoc :hist-cur-prefix "a"))))
+  (is (= (-> (assoc fake-history-state :cmdline-input "a")
              (c/history-search-navigate true)
              (c/history-search-navigate true))
-         {:cmdline-input "abc",
-          :cmdline-history (-> fake-history-state
-                               (assoc :cur-idx 0)
-                               (assoc :cur-prefix "a"))}))
-  (is (= (-> {:cmdline-input "a", :cmdline-history fake-history-state}
+         (-> fake-history-state
+             (assoc :cmdline-input "abc")
+             (assoc :hist-cur-idx 0)
+             (assoc :hist-cur-prefix "a"))))
+  (is (= (-> (assoc fake-history-state :cmdline-input "a")
              (c/history-search-navigate true)
              (c/history-search-navigate true)
              (c/history-search-navigate true))
-         {:cmdline-input "abc",
-          :cmdline-history (-> fake-history-state
-                               (assoc :cur-idx 0)
-                               (assoc :cur-prefix "a"))}))
-  (is (= (-> {:cmdline-input "a", :cmdline-history fake-history-state}
+         (-> fake-history-state
+             (assoc :cmdline-input "abc")
+             (assoc :hist-cur-idx 0)
+             (assoc :hist-cur-prefix "a"))))
+  (is (= (-> (assoc fake-history-state :cmdline-input "a")
              (c/history-search-navigate true)
              (c/history-search-navigate false))
-         {:cmdline-input "a", :cmdline-history fake-history-state}))
-  (is (= (-> {:cmdline-input "a", :cmdline-history fake-history-state}
+         (assoc fake-history-state :cmdline-input "a")))
+  (is (= (-> (assoc fake-history-state :cmdline-input "a")
              (c/history-search-navigate true)
              (c/history-search-navigate true)
              (c/history-search-navigate false))
-         {:cmdline-input "aac",
-          :cmdline-history (-> fake-history-state
-                               (assoc :cur-idx 1)
-                               (assoc :cur-prefix "a"))}))
-  (is (= (-> {:cmdline-input "aa", :cmdline-history fake-history-state}
+         (-> fake-history-state
+             (assoc :cmdline-input "aac")
+             (assoc :hist-cur-idx 1)
+             (assoc :hist-cur-prefix "a"))))
+  (is (= (-> (assoc fake-history-state :cmdline-input "aa")
              (c/history-search-navigate true))
-         {:cmdline-input "aac",
-          :cmdline-history (-> fake-history-state
-                               (assoc :cur-idx 1)
-                               (assoc :cur-prefix "aa"))})))
+         (-> fake-history-state
+             (assoc :cmdline-input "aac")
+             (assoc :hist-cur-idx 1)
+             (assoc :hist-cur-prefix "aa")))))

@@ -482,116 +482,124 @@
 ;; If the user has committed to a search, then a pointer points to an entry in
 ;; the history.
 
-(def history-initial-state {:entries [], :cur-idx nil, :cur-prefix nil})
+(def history-initial-state
+  {:hist-entries [], :hist-cur-idx nil, :hist-cur-prefix nil})
 
 (defn history-add
-  ([hist entry limit]
-   (let [rv (-> hist
-                (update :entries
-                        (fn [v]
-                          (if (= (peek v) entry)
-                            v
-                            (let [new (conj v entry)
-                                  new-count (count new)]
-                              (if (> new-count limit)
-                                (subvec new (- new-count limit))
-                                new)))))
-                (assoc :cur-prefix nil)
-                (assoc :cur-idx nil))]
-     rv))
-  ([hist entry] (history-add hist entry history-limit)))
+  [ui-state entry]
+  (-> ui-state
+      (update :hist-entries
+              (fn [v]
+                (if (= (peek v) entry)
+                  v
+                  (let [new (conj v entry)
+                        new-count (count new)]
+                    (if (> new-count history-limit)
+                      (subvec new (- new-count history-limit))
+                      new)))))
+      (assoc :hist-cur-prefix nil)
+      (assoc :hist-cur-idx nil)))
+
+(defn history-is-search-uncommitted?
+  "Returns whether the search is uncommitted, i.e. no user action yet."
+  [{:keys [hist-cur-idx hist-cur-prefix]}]
+  (assert (= (nil? hist-cur-idx) (nil? hist-cur-prefix)))
+  (nil? hist-cur-idx))
+
+(defn history-search-find-next-index
+  [hist-entries hist-cur-idx prefix backward?]
+  (let [remaining-entries (if (nil? hist-cur-idx)
+                            hist-entries
+                            (if backward?
+                              (subvec hist-entries 0 hist-cur-idx)
+                              (subvec hist-entries (inc hist-cur-idx))))
+        entries-seq
+          (if backward? (rseq remaining-entries) (seq remaining-entries))
+        matching-indices
+          (keep-indexed (fn [idx entry]
+                          (if (.startsWith entry prefix)
+                            (if backward?
+                              (- (or hist-cur-idx (count hist-entries)) 1 idx)
+                              (+ (or hist-cur-idx -1) 1 idx))))
+                        entries-seq)
+        new-idx (first matching-indices)
+        adjusted-idx
+          (if (nil? new-idx) (if backward? hist-cur-idx nil) new-idx)]
+    adjusted-idx))
 
 (defn history-search
-  "Searches the history record for a prefix match and saves it in the cur-idx
+  "Searches the history record for a prefix match and saves it in the hist-cur-idx
   field.
 
   We represent the search state as follows:
 
-  - When the user is not actively engaged in a search (cur-idx is nil), the
-  default search must be backwards and returns the most recent prefix match.
+  The search state may be committed or uncommitted. When it is uncommitted,
+  hist-cur-idx and hist-cur-prefix are both nil. Otherwise they are both
+  non-nil.
 
-  - When the user presses the up arrow, the speculative search is committed and
-  is represented by a non-nil cur-idx if the search is fruitful. If the search
-  is not fruitful it will remain nil. In a committed state, any further searches
-  must be of the same prefix. If the user repeatedly presses the up arrow and
-  exhausts the search entries, the first entry matching the prefix (i.e. the
-  last to be found) will remain.
+  When uncommitted, the search can only be backwards. It returns the most recent
+  prefix match.
 
-  - When the user presses the down arrow, which must have come from a committed
-  search state, the search proceeds forwards. If the search is not fruitful,
-  cur-idx will become nil and the search becomes uncommitted.
+  When committed, the search must be of the same prefix as the previous search.
+  The search may be backwards or forwards. If backwards and it exhausts the
+  search space, the hist-cur-idx stays the same. If forwards and it exhausts the
+  search space, the search becomes uncommitted.
   "
-  [{:keys [entries cur-idx], :as hist} prefix backward?]
-  (if (and (not backward?) (nil? cur-idx))
-    (throw
-      (js/Error
-        "Cannot execute a forward search when the user has not committed to searching.")))
-  (let [remaining-entries (if (nil? cur-idx)
-                            entries
-                            (if backward?
-                              (subvec entries 0 cur-idx)
-                              (subvec entries (inc cur-idx))))
-        entries-seq
-          (if backward? (rseq remaining-entries) (seq remaining-entries))
-        matching-indices (keep-indexed
-                           (fn [idx entry]
-                             (if (.startsWith entry prefix)
-                               (if backward?
-                                 (- (or cur-idx (count entries)) 1 idx)
-                                 (+ (or cur-idx -1) 1 idx))))
-                           entries-seq)
-        new-idx (first matching-indices)
-        adjusted-idx (if (nil? new-idx) (if backward? cur-idx nil) new-idx)]
-    (assoc hist :cur-idx adjusted-idx)))
+  [{:keys [hist-entries hist-cur-idx hist-cur-prefix], :as ui-state} prefix
+   backward?]
+  (if (history-is-search-uncommitted? ui-state)
+    (assert
+      backward?
+      "Cannot execute a forward search when the user has not committed to searching.")
+    (assert (= prefix hist-cur-prefix)
+            "When committed the search must be of the same prefix as before."))
+  (let [adjusted-idx (history-search-find-next-index hist-entries
+                                                     hist-cur-idx
+                                                     prefix
+                                                     backward?)
+        new-prefix (if (nil? adjusted-idx) nil prefix)]
+    (-> ui-state
+        (assoc :hist-cur-prefix new-prefix)
+        (assoc :hist-cur-idx adjusted-idx))))
 
 (defn history-current
   "Returns the currently active history entry."
-  [{:keys [entries cur-idx], :as hist}]
-  (get entries cur-idx nil))
+  [{:keys [hist-entries hist-cur-idx], :as ui-state}]
+  (get hist-entries hist-cur-idx nil))
 
-(defn history-is-search-uncommitted?
-  "Returns whether the search is uncommitted, i.e. no user action yet."
-  [{:keys [cur-idx]}]
-  (nil? cur-idx))
+(defn history-current-set-input
+  [ui-state fallback]
+  (assoc ui-state :cmdline-input (or (history-current ui-state) fallback)))
 
 (defn history-search-current-completion
   "Calculates the current history-based completion."
-  [{:keys [cmdline-history cmdline-input]}]
-  (history-current (if (history-is-search-uncommitted? cmdline-history)
-                     (if (seq cmdline-input)
-                       (history-search cmdline-history cmdline-input true)))))
+  [{:keys [cmdline-input hist-entries], :as ui-state}]
+  (get hist-entries
+       (if (and (history-is-search-uncommitted? ui-state) (seq cmdline-input))
+         (history-search-find-next-index hist-entries nil cmdline-input true))
+       nil))
 
 (defn history-search-navigate
-  [{:keys [cmdline-history cmdline-input], :as ui-state} backward?]
-  (if (history-is-search-uncommitted? cmdline-history)
+  [{:keys [cmdline-input hist-cur-prefix], :as ui-state} backward?]
+  (if (history-is-search-uncommitted? ui-state)
     (if backward?
       ;; Uncommitted state + backwards search => committed state
-      (let [new-hist (history-search cmdline-history cmdline-input true)
-            new-input (or (history-current new-hist) cmdline-input)]
-        (-> ui-state
-            (assoc :cmdline-history (assoc new-hist :cur-prefix cmdline-input))
-            (assoc :cmdline-input new-input)))
+      (-> ui-state
+          (history-search cmdline-input true)
+          (history-current-set-input cmdline-input))
       ;; The user cannot execute a forward search. Ignore this.
       ui-state)
     ;; Committed search using the current prefix.
-    (let [new-hist (history-search cmdline-history
-                                   (:cur-prefix cmdline-history)
-                                   backward?)
-          new-input (or (history-current new-hist)
-                        (:cur-prefix cmdline-history))
-          new-hist (if (nil? (history-current new-hist))
-                     (assoc new-hist :cur-prefix nil)
-                     new-hist)]
-      (-> ui-state
-          (assoc :cmdline-history new-hist)
-          (assoc :cmdline-input new-input)))))
+    (-> ui-state
+        (history-search hist-cur-prefix backward?)
+        (history-current-set-input hist-cur-prefix))))
 
 (defn history-search-navigate-up
   [ui-state]
   ;; If not committed and not empty, the user would have seen the most
   ;; recent completion, so we navigate up twice. Otherwise, once.
   (if (and (seq (:cmdline-input ui-state))
-           (history-is-search-uncommitted? (:cmdline-history ui-state)))
+           (history-is-search-uncommitted? ui-state))
     (-> ui-state
         (history-search-navigate true)
         (history-search-navigate true))
@@ -613,8 +621,8 @@
 (defn history-search-navigate-finish
   [ui-state]
   (-> ui-state
-      (assoc-in [:cmdline-history :cur-idx] nil)
-      (assoc-in [:cmdline-history :cur-prefix] nil)))
+      (assoc :hist-cur-idx nil)
+      (assoc :hist-cur-prefix nil)))
 
 (sg/reg-event :app :cmdline-arrow-up #(update % :ui history-search-navigate-up))
 (sg/reg-event :app
@@ -637,24 +645,25 @@
   (sg/add-kv-table rt-ref
                    :ui
                    {}
-                   {:weeks-to-show 15,
-                    :start-date (today),
-                    :cmdline-input "",
-                    :cmdline-output
-                      "Welcome to smartcal. Type \"help\" for help.",
-                    :cmdline-history history-initial-state,
-                    ;; This defines what kind of content the modal is
-                    ;; showing. It may be nil, :help, :ls-all, :ls-visible
-                    ;; etc.
-                    :modal-content nil,
-                    ;; When we decide to stop showing the modal, instead of
-                    ;; resetting the modal-content to nil, we change this
-                    ;; instead to preserve the original modal contents.
-                    ;; This is nicer since we have an animation
-                    ;; (technically a CSS transition) to dismiss the modal.
-                    ;; The user won't have to see a flash of the empty
-                    ;; modal.
-                    :modal-shown false}))
+                   (merge history-initial-state
+                          {:weeks-to-show 15,
+                           :start-date (today),
+                           :cmdline-input "",
+                           :cmdline-output
+                             "Welcome to smartcal. Type \"help\" for help.",
+                           ;; This defines what kind of content the modal
+                           ;; is showing. It may be nil, :help, :ls-all,
+                           ;; :ls-visible etc.
+                           :modal-content nil,
+                           ;; When we decide to stop showing the modal,
+                           ;; instead of resetting the modal-content to
+                           ;; nil, we change this instead to preserve the
+                           ;; original modal contents. This is nicer since
+                           ;; we have an animation
+                           ;; (technically a CSS transition) to dismiss the
+                           ;; modal. The user won't have to see a flash of
+                           ;; the empty modal.
+                           :modal-shown false})))
 
 (def app-state-validators
   {:weeks-to-show #(and (integer? %) (>= % 1) (<= % 60)),
@@ -1159,12 +1168,12 @@
       (assoc-in [:ui :cmdline-output] "")
       (assoc-in [:ui :cmdline-input] "")
       (hide-modal nil)
-      (update-in [:ui :cmdline-history]
-                 #(let [rv (history-add % input)]
-                    (when VERBOSE
-                      (js/console.log "Added \"" (pr-str input)
-                                      "\" to history: " (pr-str rv)))
-                    rv))
+      (update :ui
+              #(let [rv (history-add % input)]
+                 (when VERBOSE
+                   (js/console.log "Added \"" (pr-str input)
+                                   "\" to history: " (pr-str rv)))
+                 rv))
       (execute-input-impl input)))
 (sg/reg-event :app :execute-input execute-input)
 
