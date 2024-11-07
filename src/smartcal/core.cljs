@@ -770,7 +770,7 @@
    ls-cmd = <'ls' | 'list'> (ls-all | ls-visible? | ls-only)
    ls-all = <ws 'all'>
    ls-visible = <ws 'visible'>
-   ls-only = <ws 'only'> str-expr-star
+   ls-only = <ws 'only' ws> str-expr-plus
    next-cmd = <('next' | 'n')> (<ws> int-lit | <ws? '(' ws?> int-expr <ws? ')'>)?
    prev-cmd = <('prev' | 'p')> (<ws> int-lit | <ws? '(' ws?> int-expr <ws? ')'>)?
    goto-cmd = <'goto' ws> date-expr
@@ -849,7 +849,7 @@
    dow-lit-plus = dow-lit ((<ws? ',' ws?> dow-lit)* | (<ws> dow-lit)*)
    month-lit-plus = month-lit ((<ws? ',' ws?> month-lit)* | (<ws> month-lit)*)
    occurrence-ordinal-plus = occurrence-ordinal ((<ws? ',' ws?> occurrence-ordinal)* | (<ws> occurrence-ordinal)*)
-   <str-expr-star> = (<ws> str-expr ((<ws? ',' ws?> str-expr)* | <ws> str-expr))?
+   <str-expr-plus> = str-expr ((<ws? ',' ws?> str-expr)* | (<ws> str-expr)*)
   ")
 
 (defn transform-parsed
