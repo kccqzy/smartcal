@@ -333,7 +333,7 @@
   ["Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"])
 
 (def occurrence-ordinals
-  {"first" 0, "second" 1, "third" 2, "fourth" 4, "fifth" 5, "last" -1})
+  {"first" 0, "second" 1, "third" 2, "fourth" 3, "fifth" 4, "last" -1})
 
 (def occurrence-ordinals-inv (cset/map-invert occurrence-ordinals))
 
