@@ -157,13 +157,12 @@
 
 (defn modulo-remainder-seq
   "Returns a sequence of integers in a range where it is congruent to a specified value modulo another specified value."
-  ([divisor val from]
-   (let [remainder (mod val divisor)
-         from-remainder (mod from divisor)
-         first-selected (+ from (mod (- remainder from-remainder) divisor))]
-     (iterate #(+ divisor %) first-selected)))
-  ([divisor val from to]
-   (take-while #(< % to) (modulo-remainder-seq divisor val from))))
+  [divisor val from to]
+  {:pre [(integer? divisor) (integer? val) (integer? from) (integer? to)
+         (>= divisor 1)]}
+  (if (== divisor 1)
+    (range from to)
+    (range (+ from (mod (- val from) divisor)) to divisor)))
 
 (defn soonest-day-of-week
   "Return the daynum for the given day of week that is the soonest on or after the specified start date."
@@ -175,10 +174,12 @@
   [day-of-week m y]
   (let [day-1 (ymd-to-date y m 1)
         first-occurrence-day-num (soonest-day-of-week day-1 day-of-week)
-        all-occurrences-days-num (take-while
-                                   #(== (:m day-1) (:m (day-num-to-date %)))
-                                   (iterate #(+ 7 %) first-occurrence-day-num))]
-    (mapv day-num-to-date all-occurrences-days-num)))
+        all-occurrences (keep #(let [date (day-num-to-date %)]
+                                 (if (== (:m day-1) (:m date)) date))
+                              (range first-occurrence-day-num
+                                     (+ 31 first-occurrence-day-num)
+                                     7))]
+    (into [] all-occurrences)))
 
 (defn get-neg
   "Just like get on vector except it supports negative indexing."
@@ -189,20 +190,18 @@
   [occurrences day-of-week m y]
   (let [all-dows (weekdays-of-month day-of-week m y)]
     (->> occurrences
-         (map #(get-neg all-dows %))
-         (filter identity)
+         (keep #(get-neg all-dows %))
          (sort-by :d))))
 
 (defn select-dates-from-month-recur
   "Select days from a monthly recurring pattern according to :day-selection."
   [recur-pat monthnum]
   (case (:day-selection recur-pat)
-    :d (filter identity
-         (map #(let [date (ymd-to-date 1600 monthnum %)]
-                 ;; Need to filter away non-exist dates such as Feb 31
-                 ;; instead of wrapping.
-                 (if (= (:d date) %) date nil))
-           (sort (:d recur-pat))))
+    :d (keep #(let [date (ymd-to-date 1600 monthnum %)]
+                ;; Need to filter away non-existent dates such as Feb 31
+                ;; instead of wrapping.
+                (if (= (:d date) %) date))
+             (sort (:d recur-pat)))
     :dow (all-nd-weekdays-of-month (:occ recur-pat)
                                    (:dow recur-pat)
                                    monthnum
@@ -212,9 +211,9 @@
   [recur-pat y]
   (case (:day-selection recur-pat)
     :md (let [date (ymd-to-date y (:m recur-pat) (:d recur-pat))]
-          ;; Need to filter away non-exist dates such as Feb 31 instead
+          ;; Need to filter away non-existent dates such as Feb 31 instead
           ;; of wrapping.
-          (if (and (= (:d date) (:d recur-pat))) [date] nil))
+          (if (and (= (:d date) (:d recur-pat))) [date]))
     :occ-dow-month
       (mapcat #(all-nd-weekdays-of-month (:occ recur-pat) (:dow recur-pat) % y)
         (:m recur-pat))))
@@ -311,7 +310,7 @@
                 [{:date single-occ, :event ev}]
                 nil)
               (if-let [recur-pat (:recurring ev)]
-                (map #(hash-map :date % :event ev)
+                (map #(array-map :date % :event ev)
                   (recurrent-event-occurrences recur-pat epoch from until)))))
     events))
 
@@ -463,18 +462,17 @@
 
 (defn align-sorted-seqs
   [seq1 seq2]
-  (if-let [first1 (first seq1)]
-    (if-let [first2 (first seq2)]
-      (cond (= first1 first2) (lazy-seq (cons [first1 first2]
-                                              (align-sorted-seqs (rest seq1)
-                                                                 (rest seq2))))
-            (< first1 first2) (lazy-seq (cons [first1 nil]
-                                              (align-sorted-seqs (rest seq1)
-                                                                 seq2)))
-            :else (lazy-seq (cons [nil first2]
-                                  (align-sorted-seqs seq1 (rest seq2)))))
-      (map #(vector % nil) seq1))
-    (map #(vector nil %) seq2)))
+  (loop [s1 seq1
+         s2 seq2
+         result (transient [])]
+    (cond (and (empty? s1) (empty? s2)) (persistent! result)
+          (empty? s1) (recur s1 (next s2) (conj! result [nil (first s2)]))
+          (empty? s2) (recur (next s1) s2 (conj! result [(first s1) nil]))
+          (= (first s1) (first s2))
+            (recur (next s1) (next s2) (conj! result [(first s1) (first s2)]))
+          (< (first s1) (first s2))
+            (recur (next s1) s2 (conj! result [(first s1) nil]))
+          :else (recur s1 (next s2) (conj! result [nil (first s2)])))))
 
 ;; -------------------------
 ;; Command line history and search
@@ -520,7 +518,7 @@
 (defn history-is-search-uncommitted?
   "Returns whether the search is uncommitted, i.e. no user action yet."
   [{:keys [hist-cur-idx hist-cur-prefix]}]
-  (assert (= (nil? hist-cur-idx) (nil? hist-cur-prefix)))
+  {:pre [(= (nil? hist-cur-idx) (nil? hist-cur-prefix))]}
   (nil? hist-cur-idx))
 
 (defn history-search-find-next-index
@@ -540,8 +538,7 @@
                               (+ (or hist-cur-idx -1) 1 idx))))
                         entries-seq)
         new-idx (first matching-indices)
-        adjusted-idx
-          (if (nil? new-idx) (if backward? hist-cur-idx nil) new-idx)]
+        adjusted-idx (or new-idx (if backward? hist-cur-idx))]
     adjusted-idx))
 
 (defn history-search
@@ -593,8 +590,7 @@
   [{:keys [cmdline-input hist-entries], :as ui-state}]
   (get hist-entries
        (if (and (history-is-search-uncommitted? ui-state) (seq cmdline-input))
-         (history-search-find-next-index hist-entries nil cmdline-input true))
-       nil))
+         (history-search-find-next-index hist-entries nil cmdline-input true))))
 
 (defn history-search-navigate
   [{:keys [cmdline-input hist-cur-prefix], :as ui-state} backward?]
@@ -741,12 +737,13 @@
               :show-message
               (fn [env {:keys [msg]}] (show-message env msg)))
 
-(def us-bank-holidays
-  (mapv #(-> %
-             (assoc :system true)
-             (assoc-in [:recurring :recur-start] epoch)
-             (assoc-in [:recurring :recur-type] :year)
-             (assoc-in [:recurring :freq] 1))
+(defn us-bank-holidays
+  []
+  (map #(-> %
+            (assoc :system true)
+            (assoc-in [:recurring :recur-start] epoch)
+            (assoc-in [:recurring :recur-type] :year)
+            (assoc-in [:recurring :freq] 1))
     [{:name "New Year's Day", :recurring {:day-selection :md, :m 0, :d 1}}
      {:name "Martin Luther King Jr. Day",
       :recurring {:day-selection :occ-dow-month, :occ #{2}, :dow 1, :m #{0}}}
@@ -770,7 +767,7 @@
   (sg/add-kv-table rt-ref
                    :events
                    {:primary-key :name}
-                   (into {} (map #(vector (:name %) %) us-bank-holidays))))
+                   (into {} (map #(vector (:name %) %) (us-bank-holidays)))))
 
 (sg/reg-event :app :add-event! (fn [env event] (kv/add env :events event)))
 
@@ -1072,18 +1069,23 @@
   (bind selected-events
         (sg/query
           (fn [{:keys [events], :as env}]
-            (->> events
-                 (vals)
-                 (filter #(or (nil? selected-or-nil)
-                              (contains? selected-or-nil (:name %))))
-                 (map #(assoc %
-                         :visible-occurrences
-                           (map :date (get-visible-events start until [%]))))
-                 (map #(assoc %
-                         :visible-occurrences-daynums
-                           (map :daynum (:visible-occurrences %))))
-                 (filter #(or show-invisible (seq (:visible-occurrences %))))
-                 (sort-by :name gstr/intAwareCompare)))))
+            (sort-by
+              :name
+              gstr/intAwareCompare
+              (let [data (vals (if (nil? selected-or-nil)
+                                 events
+                                 (select-keys events selected-or-nil)))
+                    xf (comp (map #(assoc %
+                                     :visible-occurrences
+                                       (mapv :date
+                                         (get-visible-events start until [%]))))
+                             (map #(assoc %
+                                     :visible-occurrences-daynums
+                                       (map :daynum (:visible-occurrences %))))
+                             (if show-invisible
+                               identity
+                               (filter #(seq (:visible-occurrences %)))))]
+                (sequence xf data))))))
   (render
     (<<
       [:div#ls-grid
@@ -1091,31 +1093,30 @@
          selected-events
          :name
          (fn [ev]
-           (<<
-             [:div.ls-minigrid
-              (sg/simple-seq
-                (align-sorted-seqs (range (:daynum start)
-                                          (+ (:daynum start)
-                                             (* 7 weeks-to-show)))
-                                   (:visible-occurrences-daynums ev))
-                (fn [[this-daynum event-daynum]]
-                  (<< [:div.ls-minigrid-day
-                       {:class (if (nil? event-daynum) "absent" "present")}])))]
-             [:div.ls-desc [:h4 (:name ev)]
-              (if-let [date (:single-occ ev)]
-                (<< [:p "On " (format-date-en-us date)])
-                (if-let [recur-pat (:recurring ev)]
-                  (<<
-                    [:details
-                     [:summary "Repeating " (format-recur-pat recur-pat)]
-                     (if-let [occs (seq (:visible-occurrences ev))]
-                       (<< [:ul
-                            (sg/simple-seq
-                              occs
-                              (fn [occ] (<< [:li (format-date-en-us occ)])))])
-                       (<<
-                         [:p
-                          "No occurrences in visible date range."]))])))])))])))
+           (<< [:div.ls-minigrid
+                (sg/simple-seq (align-sorted-seqs
+                                 (range (:daynum start)
+                                        (+ (:daynum start) (* 7 weeks-to-show)))
+                                 (:visible-occurrences-daynums ev))
+                               (fn [[this-daynum event-daynum]]
+                                 (<< [:div.ls-minigrid-day
+                                      {:class (if (nil? event-daynum)
+                                                "absent"
+                                                "present")}])))]
+               [:div.ls-desc [:h4 (:name ev)]
+                (if-let [date (:single-occ ev)]
+                  (<< [:p "On " (format-date-en-us date)])
+                  (if-let [recur-pat (:recurring ev)]
+                    (<< [:details
+                         [:summary "Repeating " (format-recur-pat recur-pat)]
+                         (if (empty? (:visible-occurrences ev))
+                           (<< [:p "No occurrences in visible date range."])
+                           (<< [:ul
+                                (sg/simple-seq (:visible-occurrences ev)
+                                               (fn [occ]
+                                                 (<< [:li
+                                                      (format-date-en-us
+                                                        occ)])))]))])))])))])))
 
 (defc config-modal-component
   []
@@ -1183,12 +1184,7 @@
       (assoc-in [:ui :cmdline-output] "")
       (assoc-in [:ui :cmdline-input] "")
       (hide-modal nil)
-      (update :ui
-              #(let [rv (history-add % input)]
-                 (when VERBOSE
-                   (js/console.log "Added \"" (pr-str input)
-                                   "\" to history: " (pr-str rv)))
-                 rv))
+      (update :ui history-add input)
       (execute-input-impl input)))
 (sg/reg-event :app :execute-input execute-input)
 
@@ -1364,18 +1360,13 @@
   (bind days-with-events
         (sg/query (fn [{:keys [events]}]
                     (get-days-with-events start until (vals events)))))
-  (effect :mount
-          [env]
-          ;; Later we are going to load events from local storage.
-  )
   (render (<< [:div#cal (modal-component)
                [:div#table {:on-click {:e :hide-modal}} [:div.td.th "Sun"]
                 [:div.td.th "Mon"] [:div.td.th "Tue"] [:div.td.th "Wed"]
                 [:div.td.th "Thu"] [:div.td.th "Fri"] [:div.td.th "Sat"]
-                (sg/keyed-seq (->> (* 7 weeks-to-show)
-                                   (range)
-                                   (map #(+ % (:daynum start)))
-                                   (map day-num-to-date))
+                (sg/keyed-seq (mapv day-num-to-date
+                                (range (:daynum start)
+                                       (+ (:daynum start) (* 7 weeks-to-show))))
                               :daynum
                               (fn [date]
                                 (day-component date

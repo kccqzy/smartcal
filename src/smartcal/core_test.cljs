@@ -49,6 +49,18 @@
   (is (= (c/actual-start (c/ymd-to-date 2024 9 11)) (c/ymd-to-date 2024 9 6)))
   (is (= (c/actual-start (c/ymd-to-date 2024 0 1)) (c/ymd-to-date 2023 11 31))))
 
+(deftest modulo-remainder-seq
+  (is (= (c/modulo-remainder-seq 7 0 0 0) []))
+  (is (= (c/modulo-remainder-seq 7 71 0 10) [1 8]) "val outside range")
+  (is (= (c/modulo-remainder-seq 7 -6 0 10) [1 8]) "val negative")
+  (is (= (c/modulo-remainder-seq 7 6 6 6) []) "from = to")
+  (is (= (c/modulo-remainder-seq 7 0 1 0) []) "from > to")
+  (is (= (c/modulo-remainder-seq 7 6 6 7) [6]))
+  (is (= (c/modulo-remainder-seq 7 6 0 21) [6 13 20]))
+  (is (= (c/modulo-remainder-seq 2 3 4 8) [5 7]))
+  (is (= (c/modulo-remainder-seq 1 3 4 8) [4 5 6 7]))
+  (is (chunked-seq? (c/modulo-remainder-seq 7 6 0 21))))
+
 (deftest all-nd-weekday-of-month
   (is (= (c/all-nd-weekdays-of-month [0] 0 9 2024) [(c/ymd-to-date 2024 9 6)]))
   (is (= (c/all-nd-weekdays-of-month [0] 1 9 2024) [(c/ymd-to-date 2024 9 7)]))
