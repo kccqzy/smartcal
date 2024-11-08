@@ -978,89 +978,73 @@
     (<<
       [:div#help
        [:p
-        "This is a smart calendar app that runs completely in your browser. It
-        is controlled by typing commands into the command area at the bottom."]
+        "This is a smart calendar app that runs completely in your browser. It is controlled by typing commands into the command area at the bottom."]
        [:details {:open true} [:summary "Navigating the calendar"]
         [:p "Type " [:code "next"] " or " [:code "prev"]
-         " to move the calendar view forward or backward by one week. When
-         followed with an integer, the calendar view is moved by that many
-         weeks. For example "
+         " to move the calendar view forward or backward by one week. When followed with an integer, the calendar view is moved by that many weeks. For example "
          [:code "next 7"] " moves the calendar forward by 7 weeks."]
         [:p "To go to a specific date, use the " [:code "goto"]
-         " command, followed by a date literal. There are many ways you can
-         specify a date literal. So all of these work: "
+         " command, followed by a date literal. There are many ways you can specify a date literal. So all of these work: "
          [:code "goto 20241001"] ", " [:code "goto 2024-10-01"] ", "
          [:code "goto Oct 1, 2024"] ", " [:code "goto 01 Oct 2024"]
-         ". However you cannot specify the month as a number unless the year is
-         specified first. This is because some put the day before the month, and
-         some after, so a date like 10/01/2024 is inherently ambiguous."]]
+         ". However you cannot specify the month as a number unless the year is specified first. This is because some put the day before the month, and some after, so a date like 10/01/2024 is inherently ambiguous."]]
        [:details {:open true} [:summary "Adding events"]
         [:p "The " [:code "add"]
-         " command is used to add new events. An event always has a name. Adding
-         an event with the same name as an existing event replaces it. An event
-         can be a single occurrence or a recurring event."]
-        [:p
-         "A single event
-         has its occurrence date specified using the "
+         " command is used to add new events. An event always has a name. Adding an event with the same name as an existing event replaces it. An event can be a single occurrence or a recurring event."]
+        [:p "A single event has its occurrence date specified using the "
          [:code "on"] " keyword. So "
          [:code "add \"Celebrate Jack's 60th birthday\" on 20241018"]
          " creates a single event with that name and on that date."]
         [:p "A recurring event has its recurrence pattern specified using the "
          [:code "every"]
-         " keyword, followed by the recurrence period, which may be specified in
-         units of days, weeks, months, or years."]
+         " keyword, followed by the recurrence period, which may be specified in units of days, weeks, months, or years."]
         [:p [:em "Day-based recurrence. "] "The command "
          [:code "add \"Daily reflection\" every day"]
          " is an example. The command "
          [:code "add \"Take out the trash\" every 3 days"]
          " is another example."]
         [:p [:em "Week-based recurrence. "]
-         "Week-based recurrences are simply day-based recurrences where the
-         period is a multiple of 7. It allows you to specify the days in the
-         first 7 days of that period. The command "
+         "Week-based recurrences are simply day-based recurrences where the period is a multiple of 7. It allows you to specify the days in the first 7 days of that period. The command "
          [:code "add \"TGIF\" every week on Fri"]
          " is an example. There may be multiple days specified, so "
          [:code "add \"Go to the gym\" every week on Mon, Fri"]
-         " creates an event that repeats on Monday and Friday. (The repeated
-         days may be separated by commas or simply whitespace, so "
+         " creates an event that repeats on Monday and Friday. (The repeated days may be separated by commas or simply whitespace, so "
          [:code "add \"Go to the gym\" every week on Mon Fri"]
          " also works, but the two styles cannot be mixed.) The command "
          [:code "add \"Get payslips\" every 2 weeks on Fri"]
-         " sets 14 days as the period of recurrence, so only the first Friday of
-         each period is specified."]
+         " sets 14 days as the period of recurrence, so only the first Friday of each period is specified."]
         [:p [:em "Month-based recurrence. "]
-         "Month-based recurrences specify the period of recurrence in units of
-         months, as well as the selection of a day within a month. The command "
+         "Month-based recurrences specify the period of recurrence in units of months, as well as the selection of a day within a month. The command "
          [:code "add \"Pay credit card\" every month on 28"]
-         " sets the recurrence period to be one month, and it specifies the 28th
-         day of each selected month. The command "
+         " sets the recurrence period to be one month, and it specifies the 28th day of each selected month. The command "
          [:code
           "add \"Review personal finances\" every 2 months on the first Saturday"]
-         " sets the recurrence period to be two months, and in the first month
-         of each period, specifies the first Saturday."]
+         " sets the recurrence period to be two months, and in the first month of each period, specifies the first Saturday."]
         [:p [:em "Year-based recurrence. "]
-         "Year-based recurrences similarly specify the period of recurrence in
-         units of years, as well as the selection of a day within a year. The
-         command "
+         "Year-based recurrences similarly specify the period of recurrence in units of years, as well as the selection of a day within a year. The command "
          [:code "add \"Celebrate Dad's birthday\" every year on Apr 30"]
          " is an example. The command "
          [:code
           "add \"Pay property tax\" every year on the first Monday of Apr, Dec"]
-         " is another example."]]
+         " is another example."]
+        [:p [:em "Recurrence start and end. "]
+         "Recurrences may be specified with a definite start date and an end date. For example, the command "
+         [:code
+          "add \"Prepare for the presidential election\" every 4 years on the first Monday of November from Nov 1, 2028 until Jan 1, 2080"]
+         " specifies a start date and an end date for the recurrence. If the start date is not specified, it defaults to today. If the end date is not specified, the recurrence will continue indefinitely."]]
        [:details {:open true} [:summary "Listing and inspecting events"]
         [:p "The " [:code "ls"]
-         " command can be used to list added events and inspect them. The output
-         is shown graphically, containing the name of the event, whether it is
-         recurrent or not, and if so, the recurrence pattern and the next
-         occurrences visible. There is also a minigrid that highlights the
-         occurrences."]
+         " command can be used to list added events and inspect them. The output is shown graphically, containing the name of the event, whether it is recurrent or not, and if so, the recurrence pattern and the next occurrences visible. There is also a minigrid that highlights the occurrences."]
         [:p
-         "Just like the POSIX ls tool, by default it hides any events not
-         visible in the calendar. If you wish to look at all events including
-         hidden ones, use "
+         "Just like the POSIX ls tool, by default it hides any events not visible in the calendar. If you wish to look at all events including hidden ones, use "
          [:code "ls all"]
          " instead. You can also verbosely specify the default behavior with "
-         [:code "ls visible"] "."]]])))
+         [:code "ls visible"] "."]
+        [:p "Globs can be specified. The " [:strong "?"]
+         " symbol represents any character; the " [:strong "*"]
+         " symbol represents zero or more characters. (Because discussions of characters are fraught with subtlety, here character simply refers to a Unicode code point.) So "
+         [:code "ls only glob(\"*Day\") \"X\""] " displays events ending with "
+         [:em "Day"] " and also those named " [:em "X"] "."]]])))
 
 (defc ls-modal-component
   [show-invisible selected-or-nil]
