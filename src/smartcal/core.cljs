@@ -457,7 +457,8 @@
                                                   (simplified-glob-to-regex pat)
                                                   (gstr/regExpEscape %))
                                             str-exprs))
-                               ")$"))]
+                               ")$")
+                          "u")]
     (into #{} (filter #(.test regex %) event-names))))
 
 (defn align-sorted-seqs

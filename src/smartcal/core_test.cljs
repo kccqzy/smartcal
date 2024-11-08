@@ -725,6 +725,7 @@
   (is (= (c/eval-str-exprs ["x" {:str-glob-fun "*y"}]
                            ["a" "x" "xy" "y" "yz" "z"])
          #{"x" "y" "xy"}))
+  (is (= (c/eval-str-exprs [{:str-glob-fun "?"}] ["😄"]) #{"😄"}))
   (is (= (c/eval-str-exprs ["x" "y" "z"] ["Gray"]) #{})))
 
 (deftest remove-subsequence
