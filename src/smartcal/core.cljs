@@ -51,7 +51,7 @@
 
 (defn day-num-to-date
   [day-num]
-  (assert (>= day-num 0))
+  {:pre [(>= day-num 0)]}
   (let [days-in-4y (+ 1 (* 4 365))
         days-in-100y (+ 24 (* 100 365))
         days-in-400y (+ 97 (* 400 365))
@@ -142,8 +142,48 @@
                                      (.getMonth js-date)
                                      (.getDate js-date)))))
 
+(defn date-comp [a b] (compare (:daynum a) (:daynum b)))
+
+(defn date-set [] (sorted-set-by date-comp))
+
 ;; -------------------------
-;; Functions
+;; Event type and functions
+
+(defrecord Event [name specific-occs recur-pats])
+
+(defn event?
+  [x]
+  ;; We cannot do an (instance? Event x) check because in hot-reloading, we
+  ;; actually create new Event types.
+  (and (contains? x :name)
+       (contains? x :specific-occs)
+       (contains? x :recur-pats)
+       (string? (:name x))
+       (set? (:specific-occs x))
+       (vector? (:recur-pats x))
+       (every? map? (:recur-pats x))))
+
+(defn event-from-single-occ [name occ] (Event. name (conj (date-set) occ) []))
+
+(defn event-from-single-rec [name rec] (Event. name (date-set) [rec]))
+
+(defn merge-event
+  "Merge an existing event (which may be nil) and a new event."
+  [existing-event new-event]
+  {:pre [(or (nil? existing-event) (event? existing-event)) (event? new-event)
+         (or (nil? existing-event)
+             (= (:name existing-event) (:name new-event)))],
+   :post [(event? %)]}
+  (let [existing-specific-occs (or (:specific-occs existing-event) (date-set))
+        existing-recur-pats (or (:recur-pats existing-event) [])
+        new-occ (:specific-occs new-event)
+        new-recur-pat (:recur-pats new-event)]
+    (Event. (:name new-event)
+            (reduce conj existing-specific-occs new-occ)
+            (reduce conj existing-recur-pats new-recur-pat))))
+
+;; -------------------------
+;; Other Functions
 
 (defn actual-start
   [start-date]
@@ -220,6 +260,7 @@
 
 (defn recurrent-event-occurrences
   [recur-pat default-recur-start query-start query-end]
+  {:pre [(map? recur-pat) (contains? recur-pat :recur-type)]}
   (let [recur-start (get recur-pat :recur-start default-recur-start)
         actual-start-daynum (max (:daynum query-start) (:daynum recur-start))
         actual-end-daynum (if-let [recur-end (get recur-pat :recur-end)]
@@ -284,34 +325,57 @@
                       (take-while #(< (:daynum %) actual-end-daynum)
                                   all-days))))))
 
-(defn add-event
-  [env name date-spec]
-  (let [modified-date-spec
-          (if (and (:recurring date-spec)
-                   (nil? (:recur-start (:recurring date-spec))))
-            (assoc-in date-spec [:recurring :recur-start] (today))
-            date-spec)
-        final-event (assoc modified-date-spec :name name)]
-    (kv/add env :events final-event)))
+(defn add-event-to-env
+  [env {:keys [name], :as event}]
+  {:pre [(event? event)]}
+  (let [default-start (today)
+        event (update event
+                      :recur-pats
+                      (fn [pats]
+                        (mapv #(if (:recur-start %)
+                                 %
+                                 (assoc % :recur-start default-start))
+                          pats)))]
+    (kv/update-val env :events name merge-event event)))
 
-(defn remove-events
-  "Remove events by name."
-  [name events]
-  (filterv #(not= (:name %) name) events))
+(defn merges-by
+  "Merge sorted sequences, removing duplicates."
+  ([keyfn x] x)
+  ([keyfn x y]
+   (cond (empty? x) y
+         (empty? y) x
+         (= (keyfn (first x)) (keyfn (first y)))
+           (cons (first x) (lazy-seq (merges-by keyfn (rest y) (rest x))))
+         (< (keyfn (first x)) (keyfn (first y)))
+           (cons (first x) (lazy-seq (merges-by keyfn y (rest x))))
+         :else (cons (first y) (lazy-seq (merges-by keyfn x (rest y))))))
+  ([keyfn x y & more]
+   (apply merges-by
+     keyfn
+     (for [[a b] (partition-all 2 (list* x y more))] (merges-by keyfn a b)))))
+
+(defn event-to-dates
+  "Determine the occurrences of an event in the current view. Return a vec of dates."
+  [from until event]
+  {:pre [(event? event)],
+   :post [(vector? %) (every? map? %) (every? :daynum %)]}
+  (into []
+        ;; TODO Is it really a good idea to merge sorted rather than using
+        ;; sorted-set?
+        (apply merges-by
+          :daynum
+          ;; Specific occurrences.
+          (subseq (:specific-occs event) >= from < until)
+          ;; Recurrences.
+          (map #(recurrent-event-occurrences % epoch from until)
+            (:recur-pats event)))))
 
 (defn get-visible-events
   "Determine which events are visible in the current view, given the boundaries of
   the current view and all available events. Return a map with :date :event."
   [from until events]
   (mapcat (fn [ev]
-            (if-let [single-occ (:single-occ ev)]
-              (if (and (>= (:daynum single-occ) (:daynum from))
-                       (< (:daynum single-occ) (:daynum until)))
-                [{:date single-occ, :event ev}]
-                nil)
-              (if-let [recur-pat (:recurring ev)]
-                (map #(array-map :date % :event ev)
-                  (recurrent-event-occurrences recur-pat epoch from until)))))
+            (map #(array-map :date % :event ev) (event-to-dates from until ev)))
     events))
 
 (defn get-days-with-events
@@ -416,15 +480,15 @@
              ")")))))
 
 (defn format-event
-  [name occ start until]
-  (if-let [date (:single-occ occ)]
-    (str "an event named \"" name "\" on " (format-date-en-us date))
-    (if-let [recur-pat (:recurring occ)]
-      (str "a recurrent event named \""
-           name
-           "\" repeating "
-           (format-recur-pat recur-pat)
-           (format-future-occurrences recur-pat start until)))))
+  [{:keys [name specific-occs recur-pats]} start until]
+  (str "an event named \"" name
+       "\"" (cstr/join ", "
+                       (concat
+                         (map #(str " on " (format-date-en-us %)) specific-occs)
+                         (map #(str " repeating "
+                                    (format-recur-pat %)
+                                    (format-future-occurrences % start until))
+                           recur-pats)))))
 
 (defn format-str-exprs
   [str-exprs]
@@ -745,28 +809,27 @@
 
 (defn us-bank-holidays
   []
-  (map #(-> %
-            (assoc :system true)
-            (assoc-in [:recurring :recur-start] epoch)
-            (assoc-in [:recurring :recur-type] :year)
-            (assoc-in [:recurring :freq] 1))
-    [{:name "New Year's Day", :recurring {:day-selection :md, :m 0, :d 1}}
-     {:name "Martin Luther King Jr. Day",
-      :recurring {:day-selection :occ-dow-month, :occ #{2}, :dow 1, :m #{0}}}
-     {:name "Presidents' Day",
-      :recurring {:day-selection :occ-dow-month, :occ #{2}, :dow 1, :m #{1}}}
-     {:name "Memorial Day",
-      :recurring {:day-selection :occ-dow-month, :occ #{-1}, :dow 1, :m #{4}}}
-     {:name "Juneteenth", :recurring {:day-selection :md, :m 5, :d 19}}
-     {:name "Independence Day", :recurring {:day-selection :md, :m 6, :d 4}}
-     {:name "Labor Day",
-      :recurring {:day-selection :occ-dow-month, :occ #{0}, :dow 1, :m #{8}}}
-     {:name "Columbus Day",
-      :recurring {:day-selection :occ-dow-month, :occ #{1}, :dow 1, :m #{9}}}
-     {:name "Veterans Day", :recurring {:day-selection :md, :m 10, :d 11}}
-     {:name "Thanksgiving Day",
-      :recurring {:day-selection :occ-dow-month, :occ #{3}, :dow 4, :m #{10}}}
-     {:name "Christmas Day", :recurring {:day-selection :md, :m 11, :d 25}}]))
+  (map (fn [[name recur-pat]]
+         (let [new-recur-pat (-> recur-pat
+                                 (assoc :recur-start epoch)
+                                 (assoc :recur-type :year)
+                                 (assoc :freq 1))]
+           (event-from-single-rec name new-recur-pat)))
+    {"New Year's Day" {:day-selection :md, :m 0, :d 1},
+     "Martin Luther King Jr. Day"
+       {:day-selection :occ-dow-month, :occ #{2}, :dow 1, :m #{0}},
+     "Presidents' Day"
+       {:day-selection :occ-dow-month, :occ #{2}, :dow 1, :m #{1}},
+     "Memorial Day"
+       {:day-selection :occ-dow-month, :occ #{-1}, :dow 1, :m #{4}},
+     "Juneteenth" {:day-selection :md, :m 5, :d 19},
+     "Independence Day" {:day-selection :md, :m 6, :d 4},
+     "Labor Day" {:day-selection :occ-dow-month, :occ #{0}, :dow 1, :m #{8}},
+     "Columbus Day" {:day-selection :occ-dow-month, :occ #{1}, :dow 1, :m #{9}},
+     "Veterans Day" {:day-selection :md, :m 10, :d 11},
+     "Thanksgiving Day"
+       {:day-selection :occ-dow-month, :occ #{3}, :dow 4, :m #{10}},
+     "Christmas Day" {:day-selection :md, :m 11, :d 25}}))
 
 (defn init-events-state!
   []
@@ -774,8 +837,6 @@
                    :events
                    {:primary-key :name}
                    (into {} (map #(vector (:name %) %) (us-bank-holidays)))))
-
-(sg/reg-event :app :add-event! (fn [env event] (kv/add env :events event)))
 
 ;; -------------------------
 ;; Control language
@@ -918,9 +979,16 @@
                                     (into {:day-selection :occ-dow-month} a)),
      :month-lit-plus (fn [& ms] {:m (into #{} (map :m ms))}),
      :occurrence-ordinal-plus (fn [& ms] {:occ (into #{} (map :occ ms))}),
-     :recurring (fn [b & a] {:recurring (into b a)}),
      :str-glob-fun (fn [pat] {:str-glob-fun pat}),
-     :single-occ (fn [d] {:single-occ d})}
+     :recurring (fn [b & a] {:recurring (into b a)}),
+     :single-occ (fn [d] {:single-occ d}),
+     :add-cmd (fn [name date-spec]
+                [:add-cmd
+                 (if-let [occ (:single-occ date-spec)]
+                   (event-from-single-occ name occ)
+                   (if-let [pat (:recurring date-spec)]
+                     (event-from-single-rec name pat)
+                     (throw (js/Error "unexpected add-cmd structure"))))])}
     parsed))
 
 ;; -------------------------
@@ -930,22 +998,24 @@
   [{:keys [y m d], :as ymd} show-complete events-on-this-date]
   (bind events-sorted (sort-by :name gstr/intAwareCompare events-on-this-date))
   (render
-    (<< [:div.td
-         [:p.day
-          (if show-complete
-            (format-date-en-us ymd)
-            (str (if (= 1 d) (str (get month-names m) " "))
-                 d
-                 (if (and (= 1 d) (= 0 m)) (str ", " y))))]
-         [:ul.events
-          (sg/keyed-seq events-sorted
-                        :name
-                        (fn [ev]
-                          (<< [:li
-                               {:role "button",
-                                :title (format-event (:name ev) ev nil nil),
-                                :on-click {:e :event-click, :name (:name ev)}}
-                               (:name ev)])))]]))
+    (<<
+      [:div.td
+       [:p.day
+        (if show-complete
+          (format-date-en-us ymd)
+          (str (if (= 1 d) (str (get month-names m) " "))
+               d
+               (if (and (= 1 d) (= 0 m)) (str ", " y))))]
+       [:ul.events
+        (sg/keyed-seq events-sorted
+                      :name
+                      (fn [ev]
+                        {:pre [(event? ev)]}
+                        (<< [:li
+                             {:role "button",
+                              :title (:name ev),
+                              :on-click {:e :event-click, :name (:name ev)}}
+                             (:name ev)])))]]))
   (event :event-click
          [env {:keys [name]} e]
          (do (.stopPropagation e)
@@ -995,7 +1065,7 @@
          ". However you cannot specify the month as a number unless the year is specified first. This is because some put the day before the month, and some after, so a date like 10/01/2024 is inherently ambiguous."]]
        [:details {:open true} [:summary "Adding events"]
         [:p "The " [:code "add"]
-         " command is used to add new events. An event always has a name. Adding an event with the same name as an existing event replaces it. An event can be a single occurrence or a recurring event."]
+         " command is used to add new events. An event always has a name. Adding an event with the same name as an existing event merges the new and existing events. An event may contain specific dates of occurrence, or be a recurring event."]
         [:p "A single event has its occurrence date specified using the "
          [:code "on"] " keyword. So "
          [:code "add \"Celebrate Jack's 60th birthday\" on 20241018"]
@@ -1067,8 +1137,7 @@
                                  (select-keys events selected-or-nil)))
                     xf (comp (map #(assoc %
                                      :visible-occurrences
-                                       (mapv :date
-                                         (get-visible-events start until [%]))))
+                                       (event-to-dates start until %)))
                              (map #(assoc %
                                      :visible-occurrences-daynums
                                        (map :daynum (:visible-occurrences %))))
@@ -1082,31 +1151,50 @@
        (sg/keyed-seq
          selected-events
          :name
-         (fn [ev]
-           (<< [:div.ls-minigrid
-                (sg/simple-seq (align-sorted-seqs
-                                 (range (:daynum start)
-                                        (+ (:daynum start) (* 7 weeks-to-show)))
-                                 (:visible-occurrences-daynums ev))
-                               (fn [[this-daynum event-daynum]]
-                                 (<< [:div.ls-minigrid-day
-                                      {:class (if (nil? event-daynum)
-                                                "absent"
-                                                "present")}])))]
-               [:div.ls-desc [:h4 (:name ev)]
-                (if-let [date (:single-occ ev)]
-                  (<< [:p "On " (format-date-en-us date)])
-                  (if-let [recur-pat (:recurring ev)]
-                    (<< [:details
-                         [:summary "Repeating " (format-recur-pat recur-pat)]
-                         (if (empty? (:visible-occurrences ev))
-                           (<< [:p "No occurrences in visible date range."])
-                           (<< [:ul
-                                (sg/simple-seq (:visible-occurrences ev)
-                                               (fn [occ]
-                                                 (<< [:li
-                                                      (format-date-en-us
-                                                        occ)])))]))])))])))])))
+         (fn [{:keys [visible-occurrences visible-occurrences-daynums
+                      specific-occs recur-pats],
+               :as ev}]
+           {:pre [(event? ev) (vector? visible-occurrences)
+                  (seq? visible-occurrences-daynums)]}
+           (<<
+             [:div.ls-minigrid
+              (sg/simple-seq
+                (align-sorted-seqs (range (:daynum start)
+                                          (+ (:daynum start)
+                                             (* 7 weeks-to-show)))
+                                   visible-occurrences-daynums)
+                (fn [[this-daynum event-daynum]]
+                  (<< [:div.ls-minigrid-day
+                       {:class (if (nil? event-daynum) "absent" "present")}])))]
+             [:div.ls-desc [:h4 (:name ev)]
+              (let [cnt (+ (count specific-occs) (count recur-pats))]
+                (if (== cnt 1)
+                  (<< [:p
+                       (if-let [date (first specific-occs)]
+                         (str "On " (format-date-en-us date)))
+                       (if-let [pat (first recur-pats)]
+                         (str "Repeating " (format-recur-pat pat)))])
+                  (<< [:details [:summary (str cnt " rules")]
+                       [:ul
+                        (sg/simple-seq
+                          (seq specific-occs)
+                          (fn [date] (<< [:li "On " (format-date-en-us date)])))
+                        (sg/simple-seq recur-pats
+                                       (fn [pat]
+                                         (<< [:li "Repeating "
+                                              (format-recur-pat pat)])))]])))
+              (let [cnt (count visible-occurrences)]
+                (if (== cnt 0)
+                  (<< [:p "No occurrences shown"])
+                  (<<
+                    [:details
+                     [:summary cnt
+                      (if (== 1 cnt) " occurrence shown" " occurrences shown")]
+                     [:ul
+                      (sg/simple-seq
+                        visible-occurrences
+                        (fn [occ]
+                          (<< [:li (format-date-en-us occ)])))]])))])))])))
 
 (defc config-modal-component
   []
@@ -1139,7 +1227,7 @@
             [:prev-cmd] (update-in env [:ui :start-date] prev-week)
             [:prev-cmd n] (update-in env [:ui :start-date] #(prev-week n %))
             [:goto-cmd ymd] (assoc-in env [:ui :start-date] ymd)
-            [:add-cmd name date-spec] (add-event env name date-spec)
+            [:add-cmd event] (add-event-to-env env event)
             [:rm-cmd name] (let [old-count (count (:events env))
                                  new-env (update env :events dissoc name)
                                  new-count (count (:events new-env))
@@ -1189,7 +1277,7 @@
         [:prev-cmd] "Scroll up by one week"
         [:prev-cmd n] (str "Scroll up by " n " weeks")
         [:goto-cmd date] (str "Go to date " (format-date-en-us date))
-        [:add-cmd name occ] (str "Add " (format-event name occ start until))
+        [:add-cmd event] (str "Add " (format-event event start until))
         [:rm-cmd name] (str "Remove events named \"" name "\"")
         [:ls-cmd] "List events visible in the current view"
         [:ls-cmd [:ls-all]] "List all events"
