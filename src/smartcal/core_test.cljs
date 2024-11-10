@@ -754,10 +754,10 @@
       "does not skip when the new history is the same as the first")
   (is (= (let [truncated-history (reduce c/history-add
                                    c/history-initial-state
-                                   (range (inc c/history-limit)))]
+                                   (range (* 2 c/history-limit)))]
            (:hist-entries truncated-history))
-         (range 1 (inc c/history-limit)))
-      "truncates from the front when exceeding the limit"))
+         (range c/history-limit (* 2 c/history-limit)))
+      "truncates from the front when exceeding twice the limit"))
 
 (deftest history-search
   (is (= (:hist-cur-idx (c/history-search c/history-initial-state "abc" true))
@@ -834,7 +834,60 @@
                             (c/history-search "a" true)
                             (c/history-search "a" false)
                             (c/history-search "x" true)))
-         1)))
+         1))
+  (is (= (:hist-cur-idx (-> (reduce c/history-add
+                                    (c/history-add c/history-initial-state "a")
+                                    (map #(str "b" %) (range c/history-limit)))
+                            ;; "a" "b0" ... "b499"
+                            (c/history-search "a" true)))
+         nil)
+      "cannot find history beyond the limit")
+  (is (= (:hist-cur-idx (-> (reduce c/history-add
+                                    (c/history-add c/history-initial-state "a")
+                                    (map #(str "b" %) (range c/history-limit)))
+                            (c/history-search "b0" true)))
+         1)
+      "can find history just within limit")
+  (is (= (:hist-cur-idx (-> (reduce c/history-add
+                                    (c/history-add c/history-initial-state "a")
+                                    (map #(str "b" %)
+                                      (range (dec c/history-limit))))
+                            (c/history-add "b0")
+                            ;; "a" "b0" ... "b498" "b0"
+                            (c/history-search "b0" true)))
+         c/history-limit)
+      "hist-cur-idx can equal limit")
+  (is (= (:hist-cur-idx (-> (reduce c/history-add
+                                    (c/history-add c/history-initial-state "a")
+                                    (map #(str "b" %)
+                                      (range (dec c/history-limit))))
+                            (c/history-add "b0499")
+                            (c/history-add "b0")
+                            ;; "a" "b0" ... "b498" "b0" "b0"
+                            (c/history-search "b0" true)))
+         (inc c/history-limit))
+      "hist-cur-idx can exceed limit")
+  (is (= (:hist-cur-idx (-> (reduce c/history-add
+                                    (c/history-add c/history-initial-state "a")
+                                    (map #(str "b" %)
+                                      (range (dec c/history-limit))))
+                            (c/history-add "b0")
+                            ;; "a" "b0" ... "b498" "b0"
+                            (c/history-search "b0" true)
+                            (c/history-search "b0" true)))
+         1)
+      "can find subsequent history just within limit")
+  (is (= (:hist-cur-idx (-> (reduce c/history-add
+                                    (c/history-add c/history-initial-state "a")
+                                    (map #(str "b" %)
+                                      (range (dec c/history-limit))))
+                            (c/history-add "b0")
+                            ;; "a" "b0" ... "b498" "b0"
+                            (c/history-search "b0" true)
+                            (c/history-search "b0" true)
+                            (c/history-search "b0" true)))
+         1)
+      "cannot find subsequent history beyond limit"))
 
 (def fake-history ["abc" "aac" "bbc" "ccd" "zzz"])
 

@@ -510,8 +510,12 @@
                   v
                   (let [new (conj v entry)
                         new-count (count new)]
-                    (if (> new-count history-limit)
-                      (subvec new (- new-count history-limit))
+                    ;; If we only do subvec, the problem is that it retains
+                    ;; a reference of the original vector and further calls
+                    ;; to conj will simply add more contents to the
+                    ;; original vector, leading to a classic memory leak.
+                    (if (>= new-count (* 2 history-limit))
+                      (into [] (subvec new (- new-count history-limit)))
                       new)))))
       (assoc :hist-cur-prefix nil)
       (assoc :hist-cur-idx nil)))
@@ -524,10 +528,11 @@
 
 (defn history-search-find-next-index
   [hist-entries hist-cur-idx prefix backward?]
-  (let [remaining-entries (if (nil? hist-cur-idx)
-                            hist-entries
+  (let [effective-start (max 0 (- (count hist-entries) history-limit))
+        remaining-entries (if (nil? hist-cur-idx)
+                            (subvec hist-entries effective-start)
                             (if backward?
-                              (subvec hist-entries 0 hist-cur-idx)
+                              (subvec hist-entries effective-start hist-cur-idx)
                               (subvec hist-entries (inc hist-cur-idx))))
         entries-seq
           (if backward? (rseq remaining-entries) (seq remaining-entries))
