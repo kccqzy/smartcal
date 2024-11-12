@@ -12,7 +12,7 @@
 ;; -------------------------
 ;; Types
 
-(defrecord Date [y m d weekday daynum])
+(defrecord Date [y m d dow daynum])
 
 (defn adjust-month
   [y m]
@@ -149,16 +149,16 @@
 ;; -------------------------
 ;; Event type and functions
 
-(defrecord Event [name specific-occs recur-pats])
+(defrecord Event [evname specific-occs recur-pats])
 
 (defn event?
   [x]
   ;; We cannot do an (instance? Event x) check because in hot-reloading, we
   ;; actually create new Event types.
-  (and (contains? x :name)
+  (and (contains? x :evname)
        (contains? x :specific-occs)
        (contains? x :recur-pats)
-       (string? (:name x))
+       (string? (:evname x))
        (set? (:specific-occs x))
        (vector? (:recur-pats x))
        (every? map? (:recur-pats x))))
@@ -172,13 +172,13 @@
   [existing-event new-event]
   {:pre [(or (nil? existing-event) (event? existing-event)) (event? new-event)
          (or (nil? existing-event)
-             (= (:name existing-event) (:name new-event)))],
+             (= (:evname existing-event) (:evname new-event)))],
    :post [(event? %)]}
   (let [existing-specific-occs (or (:specific-occs existing-event) (date-set))
         existing-recur-pats (or (:recur-pats existing-event) [])
         new-occ (:specific-occs new-event)
         new-recur-pat (:recur-pats new-event)]
-    (Event. (:name new-event)
+    (Event. (:evname new-event)
             (reduce conj existing-specific-occs new-occ)
             (reduce conj existing-recur-pats new-recur-pat))))
 
@@ -187,7 +187,7 @@
 
 (defn actual-start
   [start-date]
-  (day-num-to-date (- (:daynum start-date) (:weekday start-date))))
+  (day-num-to-date (- (:daynum start-date) (:dow start-date))))
 
 (defn next-week
   ([ymd] (next-week 1 ymd))
@@ -207,7 +207,7 @@
 (defn soonest-day-of-week
   "Return the daynum for the given day of week that is the soonest on or after the specified start date."
   [start dow]
-  (+ (:daynum start) (mod (- dow (:weekday start)) 7)))
+  (+ (:daynum start) (mod (- dow (:dow start)) 7)))
 
 (defn weekdays-of-month
   "Find all days that are of the given day of week in a month. Returns a vector."
@@ -326,7 +326,7 @@
                                   all-days))))))
 
 (defn add-event-to-env
-  [env {:keys [name], :as event}]
+  [env {:keys [evname], :as event}]
   {:pre [(event? event)]}
   (let [default-start (today)
         event (update event
@@ -336,7 +336,7 @@
                                  %
                                  (assoc % :recur-start default-start))
                           pats)))]
-    (kv/update-val env :events name merge-event event)))
+    (kv/update-val env :events evname merge-event event)))
 
 (defn merges-by
   "Merge sorted sequences, removing duplicates."
@@ -480,8 +480,8 @@
              ")")))))
 
 (defn format-event
-  [{:keys [name specific-occs recur-pats]} start until]
-  (str "an event named \"" name
+  [{:keys [evname specific-occs recur-pats]} start until]
+  (str "an event named \"" evname
        "\"" (cstr/join ", "
                        (concat
                          (map #(str " on " (format-date-en-us %)) specific-occs)
@@ -835,8 +835,8 @@
   []
   (sg/add-kv-table rt-ref
                    :events
-                   {:primary-key :name}
-                   (into {} (map #(vector (:name %) %) (us-bank-holidays)))))
+                   {:primary-key :evname}
+                   (into {} (map #(vector (:evname %) %) (us-bank-holidays)))))
 
 ;; -------------------------
 ;; Control language
@@ -996,7 +996,8 @@
 
 (defc day-component
   [{:keys [y m d], :as ymd} show-complete events-on-this-date]
-  (bind events-sorted (sort-by :name gstr/intAwareCompare events-on-this-date))
+  (bind events-sorted
+        (sort-by :evname gstr/intAwareCompare events-on-this-date))
   (render
     (<<
       [:div.td
@@ -1008,14 +1009,14 @@
                (if (and (= 1 d) (= 0 m)) (str ", " y))))]
        [:ul.events
         (sg/keyed-seq events-sorted
-                      :name
+                      :evname
                       (fn [ev]
                         {:pre [(event? ev)]}
                         (<< [:li
                              {:role "button",
-                              :title (:name ev),
-                              :on-click {:e :event-click, :name (:name ev)}}
-                             (:name ev)])))]]))
+                              :title (:evname ev),
+                              :on-click {:e :event-click, :name (:evname ev)}}
+                             (:evname ev)])))]]))
   (event :event-click
          [env {:keys [name]} e]
          (do (.stopPropagation e)
@@ -1130,7 +1131,7 @@
         (sg/query
           (fn [{:keys [events], :as env}]
             (sort-by
-              :name
+              :evname
               gstr/intAwareCompare
               (let [data (vals (if (nil? selected-or-nil)
                                  events
@@ -1150,7 +1151,7 @@
       [:div#ls-grid
        (sg/keyed-seq
          selected-events
-         :name
+         :evname
          (fn [{:keys [visible-occurrences visible-occurrences-daynums
                       specific-occs recur-pats],
                :as ev}]
@@ -1166,7 +1167,7 @@
                 (fn [[this-daynum event-daynum]]
                   (<< [:div.ls-minigrid-day
                        {:class (if (nil? event-daynum) "absent" "present")}])))]
-             [:div.ls-desc [:h4 (:name ev)]
+             [:div.ls-desc [:h4 (:evname ev)]
               (let [cnt (+ (count specific-occs) (count recur-pats))]
                 (if (== cnt 1)
                   (<< [:p
@@ -1243,7 +1244,7 @@
             [:ls-cmd [t]] (show-modal env t)
             [:ls-cmd [:ls-only & exprs]]
               (let [selected-events
-                      (eval-str-exprs exprs (map :name (vals (:events env))))]
+                      (eval-str-exprs exprs (map :evname (vals (:events env))))]
                 (if (empty? selected-events)
                   (show-message
                     env

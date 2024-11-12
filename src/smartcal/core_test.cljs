@@ -43,7 +43,7 @@
   (is (= (:y (c/today)) (.getFullYear (js/Date.))))
   (is (= (:m (c/today)) (.getMonth (js/Date.))))
   (is (= (:d (c/today)) (.getDate (js/Date.))))
-  (is (= (:weekday (c/today)) (.getDay (js/Date.)))))
+  (is (= (:dow (c/today)) (.getDay (js/Date.)))))
 
 (deftest actual-start
   (is (= (c/actual-start (c/ymd-to-date 2024 9 11)) (c/ymd-to-date 2024 9 6)))
