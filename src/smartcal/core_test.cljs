@@ -784,12 +784,12 @@
   (is (=
         (c/format-recur-pat
           {:recur-type :month, :freq 2, :day-selection :dow, :dow 1, :occ #{0}})
-        "every 2 months on the first Mon from this month"))
+        "every 2 months on the first Monday from this month"))
   (is
     (=
       (c/format-recur-pat
         {:recur-type :month, :freq 2, :day-selection :dow, :dow 1, :occ #{0 2}})
-      "every 2 months on the first, third Mon from this month"))
+      "every 2 months on the first, third Monday from this month"))
   (is (= (c/format-recur-pat
            {:recur-type :year, :freq 1, :day-selection :md, :m 1, :d 2})
          "every year on Feb 2 from this year"))
@@ -799,7 +799,7 @@
                               :occ #{-1},
                               :m #{5},
                               :dow 5})
-         "every year on the last Fri of Jun from this year"))
+         "every year on the last Friday of June from this year"))
   (is (= (c/format-recur-pat {:recur-type :year,
                               :freq 1,
                               :day-selection :occ-dow-month,
@@ -807,7 +807,7 @@
                               :m #{5},
                               :dow 5,
                               :recur-start c/epoch})
-         "every year on the last Fri of Jun since time immemorial")))
+         "every year on the last Friday of June since time immemorial")))
 
 (deftest format-event
   (is (= (c/format-event (c/event-from-single-occ "x" (c/ymd-to-date 2010 1 1))
@@ -825,7 +825,7 @@
                                                 :dow 5})
                       nil
                       nil)
-      "an event named \"x\" repeating every year on the last Fri of Jun from this year")))
+      "an event named \"x\" repeating every year on the last Friday of June from this year")))
 
 (deftest simplified-glob-to-regex
   (is (= (c/simplified-glob-to-regex "abc*def") "abc.*def"))

@@ -563,7 +563,7 @@
                                             (sort (:d recur-pat))))
                             :dow (str (format-occ recur-pat)
                                       " "
-                                      (get day-names (:dow recur-pat)))))
+                                      (get full-day-names (:dow recur-pat)))))
               :year (str (format-freq recur-pat)
                          " on "
                          (case (:day-selection recur-pat)
@@ -572,11 +572,11 @@
                                     (:d recur-pat))
                            :occ-dow-month
                              (str "the " (format-occ recur-pat)
-                                  " " (get day-names (:dow recur-pat))
-                                  " of " (cstr/join ", "
-                                                    (map #(get month-names %)
-                                                      (sort (:m
-                                                              recur-pat))))))))]
+                                  " " (get full-day-names (:dow recur-pat))
+                                  " of " (cstr/join
+                                           ", "
+                                           (map #(get full-month-names %)
+                                             (sort (:m recur-pat))))))))]
     (str pat start until)))
 
 (defn format-future-occurrences
