@@ -115,12 +115,24 @@
   [daynum]
   (and (>= daynum user-date-min) (<= daynum user-date-max)))
 
+(defn ymd-to-date [y m d] (day-num-to-date (ymd-to-day-num y m d)))
+
 (defn month-num
   "Calculate the ordinal for a particular month from the epoch (1600)."
   [date]
   (+ (* 12 (- (:y date) 1600)) (:m date)))
 
-(defn ymd-to-date [y m d] (day-num-to-date (ymd-to-day-num y m d)))
+(defn month-num-day-to-date [monthnum d] (ymd-to-date 1600 monthnum d))
+
+(defn week-num
+  "Calculate the ordinal for a particular week from the epoch.
+  The epoch is Saturday and is the only day with week-num 0."
+  [date]
+  (quot (+ 6 (:daynum date)) 7))
+
+(defn week-num-day-to-date
+  [weeknum dow]
+  (day-num-to-date (+ (* weeknum 7) -6 dow)))
 
 (defn ymd-map-to-date
   [{:keys [y m d]}]
@@ -233,11 +245,17 @@
          (keep #(get-neg all-dows %))
          (sort-by :d))))
 
+(defn select-dates-from-week-recur
+  [recur-pat weeknum]
+  {:pre [(keyword-identical? :week (:recur-type recur-pat))]}
+  (map #(week-num-day-to-date weeknum %) (sort (:dow recur-pat))))
+
 (defn select-dates-from-month-recur
   "Select days from a monthly recurring pattern according to :day-selection."
   [recur-pat monthnum]
+  {:pre [(keyword-identical? :month (:recur-type recur-pat))]}
   (case (:day-selection recur-pat)
-    :d (keep #(let [date (ymd-to-date 1600 monthnum %)]
+    :d (keep #(let [date (month-num-day-to-date monthnum %)]
                 ;; Need to filter away non-existent dates such as Feb 31
                 ;; instead of wrapping.
                 (if (= (:d date) %) date))
@@ -249,6 +267,7 @@
 
 (defn select-dates-from-year-recur
   [recur-pat y]
+  {:pre [(keyword-identical? :year (:recur-type recur-pat))]}
   (case (:day-selection recur-pat)
     :md (let [date (ymd-to-date y (:m recur-pat) (:d recur-pat))]
           ;; Need to filter away non-existent dates such as Feb 31 instead
@@ -259,71 +278,39 @@
         (:m recur-pat))))
 
 (defn recurrent-event-occurrences
-  [recur-pat default-recur-start query-start query-end]
-  {:pre [(map? recur-pat) (contains? recur-pat :recur-type)]}
+  [{:keys [recur-type], :as recur-pat} default-recur-start query-start
+   query-end]
   (let [recur-start (get recur-pat :recur-start default-recur-start)
         actual-start-daynum (max (:daynum query-start) (:daynum recur-start))
         actual-end-daynum (if-let [recur-end (get recur-pat :recur-end)]
                             (min (:daynum query-end) (:daynum recur-end))
-                            (:daynum query-end))]
-    (case (:recur-type recur-pat)
-      :day (let [divisor (:freq recur-pat)
-                 result-daynums (modulo-remainder-seq divisor
-                                                      (:daynum recur-start)
-                                                      actual-start-daynum
-                                                      actual-end-daynum)]
-             (map day-num-to-date result-daynums))
-      :week (let [divisor (* 7 (:freq recur-pat))
-                  first-week-occurrences-daynum
-                    (map #(soonest-day-of-week recur-start %) (:dow recur-pat))
-                  result-daynums (sort (mapcat #(modulo-remainder-seq
-                                                  divisor
-                                                  %
-                                                  actual-start-daynum
-                                                  actual-end-daynum)
-                                         first-week-occurrences-daynum))]
-              (map day-num-to-date result-daynums))
-      :month
-        ;; The semantics of determining the first occurrence is slightly
-        ;; different from "week" mode: in week mode, we always start by
-        ;; finding the soonest days matching the dow (which may be in the
-        ;; following week); here, we always start from the current month.
-        ;; The difference is deliberate since people have a stronger
-        ;; conception of the month but not the week.
-        (let [monthnum-divisor (:freq recur-pat)
-              monthnum-recur-start (month-num recur-start)
-              actual-start-monthnum (max (month-num query-start)
-                                         monthnum-recur-start)
-              actual-end-monthnum
-                (inc (if-let [recur-end (get recur-pat :recur-end)]
-                       (min (month-num recur-end) (month-num query-end))
-                       (month-num query-end)))
-              selected-months (modulo-remainder-seq monthnum-divisor
-                                                    monthnum-recur-start
-                                                    actual-start-monthnum
-                                                    actual-end-monthnum)
-              all-days (mapcat #(select-dates-from-month-recur recur-pat %)
-                         selected-months)]
-          (drop-while #(< (:daynum %) actual-start-daynum)
-                      (take-while #(< (:daynum %) actual-end-daynum) all-days)))
-      :year
-        ;; The semantics of "year" mode is similar to "month" mode. TODO:
-        ;; reduce code duplication.
-        (let [year-divisor (:freq recur-pat)
-              year-recur-start (:y recur-start)
-              actual-start-y (max (:y query-start) year-recur-start)
-              actual-end-y (inc (if-let [recur-end (get recur-pat :recur-end)]
-                                  (min (:y recur-end) (:y query-end))
-                                  (:y query-end)))
-              selected-years (modulo-remainder-seq year-divisor
-                                                   year-recur-start
-                                                   actual-start-y
-                                                   actual-end-y)
-              all-days (mapcat #(select-dates-from-year-recur recur-pat %)
-                         selected-years)]
-          (drop-while #(< (:daynum %) actual-start-daynum)
-                      (take-while #(< (:daynum %) actual-end-daynum)
-                                  all-days))))))
+                            (:daynum query-end))
+        divisor (:freq recur-pat)
+        to-period-num (case recur-type
+                        :day :daynum
+                        :week week-num
+                        :month month-num
+                        :year :y)
+        period-recur-start (to-period-num recur-start)
+        actual-start (max (to-period-num query-start) period-recur-start)
+        actual-end (inc (if-let [recur-end (get recur-pat :recur-end)]
+                          (min (to-period-num recur-end)
+                               (to-period-num query-end))
+                          (to-period-num query-end)))
+        selected-periods (modulo-remainder-seq divisor
+                                               period-recur-start
+                                               actual-start
+                                               actual-end)
+        all-matching-days
+          (mapcat #(case recur-type
+                     :day [(day-num-to-date %)]
+                     :week (select-dates-from-week-recur recur-pat %)
+                     :month (select-dates-from-month-recur recur-pat %)
+                     :year (select-dates-from-year-recur recur-pat %))
+            selected-periods)]
+    (drop-while #(< (:daynum %) actual-start-daynum)
+                (take-while #(< (:daynum %) actual-end-daynum)
+                            all-matching-days))))
 
 (defn gcd
   [a b]
@@ -358,9 +345,16 @@
                  [%]))]}
   (case recur-type
     :day recur-start
-    :week (day-num-to-date (apply min
-                             (map #(soonest-day-of-week recur-start %)
-                               (:dow recur-pat))))
+    :week (or
+            ;; The current week has an occurrence.
+            (first (drop-while #(< (:daynum %) (:daynum recur-start))
+                               (select-dates-from-week-recur recur-pat
+                                                             (week-num
+                                                               recur-start))))
+            ;; The following week instead.
+            (first (select-dates-from-week-recur recur-pat
+                                                 (+ (:freq recur-pat)
+                                                    (week-num recur-start)))))
     :month (or
              ;; The current month has an occurrence.
              (first (drop-while #(< (:daynum %) (:daynum recur-start))
@@ -542,7 +536,7 @@
                   " since time immemorial")
                 (case (:recur-type recur-pat)
                   :day " from today"
-                  :week " from this or next week" ; TODO
+                  :week " from this week"
                   :month " from this month"
                   :year " from this year"))
         until (if-let [until (:recur-end recur-pat)]
@@ -1214,7 +1208,7 @@
          [:code "add \"Take out the trash\" every 3 days"]
          " is another example."]
         [:p [:em "Week-based recurrence. "]
-         "Week-based recurrences are simply day-based recurrences where the period is a multiple of 7. It allows you to specify the days in the first 7 days of that period. The command "
+         "Week-based recurrences specify the period of recurrence in units of months, as well as the days within each chosen week. The command "
          [:code "add \"TGIF\" every week on Fri"]
          " is an example. There may be multiple days specified, so "
          [:code "add \"Go to the gym\" every week on Mon, Fri"]
@@ -1222,7 +1216,7 @@
          [:code "add \"Go to the gym\" every week on Mon Fri"]
          " also works, but the two styles cannot be mixed.) The command "
          [:code "add \"Get payslips\" every 2 weeks on Fri"]
-         " sets 14 days as the period of recurrence, so only the first Friday of each period is specified."]
+         " creates an event every other week on Friday; by default it starts this week so if today is a Saturday, the current week occurrence will be omitted and the first occurrence will be two weeks later. If this is not what you want, you can specify a start date explicitly."]
         [:p [:em "Month-based recurrence. "]
          "Month-based recurrences specify the period of recurrence in units of months, as well as the selection of a day within a month. The command "
          [:code "add \"Pay credit card\" every month on 28"]

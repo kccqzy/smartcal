@@ -38,6 +38,20 @@
   (is (= (c/month-num (c/ymd-to-date 1601 0 1)) 12))
   (is (= (c/month-num (c/ymd-to-date 1602 1 1)) 25)))
 
+(deftest week-num
+  (is (= (c/week-num c/epoch) 0))
+  (is (= (c/week-num (c/ymd-to-date 1600 0 2)) 1))
+  (is (= (c/week-num (c/ymd-to-date 1600 0 3)) 1))
+  (is (= (c/week-num (c/ymd-to-date 1600 0 8)) 1))
+  (is (= (c/week-num (c/ymd-to-date 1600 0 9)) 2)))
+
+(deftest week-num-day-to-date
+  (is (= (c/week-num-day-to-date 0 6) c/epoch))
+  (is (= (c/week-num-day-to-date 1 0) (c/ymd-to-date 1600 0 2)))
+  (is (= (c/week-num-day-to-date 1 6) (c/ymd-to-date 1600 0 8)))
+  (is (let [date (c/ymd-to-date 2024 10 10)]
+        (= (c/week-num-day-to-date (c/week-num date) (:dow date)) date))))
+
 (deftest today
   ;; Please don't run this test near midnight.
   (is (= (:y (c/today)) (.getFullYear (js/Date.))))
@@ -531,9 +545,9 @@
   (is (= (c/recurrent-event-occurrences {:recur-type :week, :freq 4, :dow #{1}}
                                         (c/ymd-to-date 2024 0 5)
                                         (c/ymd-to-date 2024 0 1)
-                                        (c/ymd-to-date 2024 2 20))
-         [(c/ymd-to-date 2024 0 8) (c/ymd-to-date 2024 1 5)
-          (c/ymd-to-date 2024 2 4)]))
+                                        (c/ymd-to-date 2024 1 28))
+         [(c/ymd-to-date 2024 0 29) (c/ymd-to-date 2024 1 26)])
+      "first week has no more occurrences")
   (is (= (c/recurrent-event-occurrences
            {:recur-type :week, :freq 2, :dow #{2 6}}
            (c/ymd-to-date 2024 0 1)
@@ -547,7 +561,7 @@
            (c/ymd-to-date 2024 0 5)
            (c/ymd-to-date 2020 0 1)
            (c/ymd-to-date 2024 0 20))
-         [(c/ymd-to-date 2024 0 5) (c/ymd-to-date 2024 0 8)
+         [(c/ymd-to-date 2024 0 5) (c/ymd-to-date 2024 0 15)
           (c/ymd-to-date 2024 0 19)]))
   (is (= (c/recurrent-event-occurrences
            {:recur-type :month, :freq 1, :day-selection :d, :d #{1}}
@@ -593,7 +607,7 @@
           (c/ymd-to-date 2024 4 31) (c/ymd-to-date 2024 6 31)])
       "skips over non-existent 31st days and also every second month")
   (is (= (c/select-dates-from-month-recur
-           {:day-selection :dow, :dow 1, :occ #{0}}
+           {:recur-type :month, :day-selection :dow, :dow 1, :occ #{0}}
            (c/month-num {:y 2024, :m 0}))
          [(c/ymd-to-date 2024 0 1)]))
   (is (= (c/recurrent-event-occurrences
@@ -770,11 +784,11 @@
            {:recur-type :day, :freq 300, :recur-start c/epoch})
          "every 300 days since time immemorial"))
   (is (= (c/format-recur-pat {:recur-type :week, :freq 1, :dow #{1}})
-         "every week on Mon from this or next week"))
+         "every week on Mon from this week"))
   (is (= (c/format-recur-pat {:recur-type :week, :freq 1, :dow #{1 3 5}})
-         "every week on Mon, Wed, Fri from this or next week"))
+         "every week on Mon, Wed, Fri from this week"))
   (is (= (c/format-recur-pat {:recur-type :week, :freq 1, :dow #{1 3 5}})
-         "every week on Mon, Wed, Fri from this or next week"))
+         "every week on Mon, Wed, Fri from this week"))
   (is (= (c/format-recur-pat
            {:recur-type :month, :freq 1, :day-selection :d, :d #{1 3 5}})
          "every month on the 1st, 3rd, 5th from this month"))
@@ -1133,6 +1147,11 @@
                               :dow #{1 5},
                               :recur-start (c/ymd-to-date 2024 0 1)})
          (c/ymd-to-date 2024 0 1)))
+  (is (= (c/find-first-start {:recur-type :week,
+                              :freq 2,
+                              :dow #{1},
+                              :recur-start (c/ymd-to-date 2024 0 6)})
+         (c/ymd-to-date 2024 0 15)))
   (is (= (c/find-first-start {:recur-type :month,
                               :freq 1,
                               :day-selection :d,
