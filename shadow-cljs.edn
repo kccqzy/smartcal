@@ -2,6 +2,7 @@
                       :output-dir "public/js"
                       :asset-path "/js"
                       :modules    {:app {:init-fn smartcal.core/init!}}
+                      :compiler-options {:fn-invoke-direct true}
                       :dev        {:closure-defines {smartcal.core/VERBOSE true}}}
                 :test {:target :browser-test :test-dir "out/test"}}
  :deps true  ; use deps.edn to launch shadow-cljs, rather than npx
