@@ -325,18 +325,127 @@
                       (take-while #(< (:daynum %) actual-end-daynum)
                                   all-days))))))
 
-(defn add-event-to-env
-  [env {:keys [evname], :as event}]
-  {:pre [(event? event)]}
-  (let [default-start (today)
-        event (update event
-                      :recur-pats
-                      (fn [pats]
-                        (mapv #(if (:recur-start %)
-                                 %
-                                 (assoc % :recur-start default-start))
-                          pats)))]
-    (kv/update-val env :events evname merge-event event)))
+(defn gcd
+  [a b]
+  {:pre [(integer? a) (integer? b)]}
+  (if (== b 0) a (recur b (mod a b))))
+
+(defn recur-month-possibly-feb
+  "Whether or not February can be reached in this month recurrence where the
+  starting month and period are specified.
+
+  This is calculating whether there exists some natural number x such that
+  s+x*p===1 (mod 12). So we have x*p===(1-s)(mod 12). This equation has
+  solutions if and only if gcd(p,12) divides (1-s).
+  "
+  [start-month period]
+  {:pre [(integer? period) (> period 0) (integer? start-month)]}
+  (or (== 1 start-month) (== 0 (mod (- 1 start-month) (gcd period 12)))))
+
+(defn find-first-start
+  "Find the first occurrence of a recurrence series. NOTE: for pathological data,
+  this function is quite slow because the first occurrence can be really far
+  away. The function recurrent-event-occurrences should be preferred since it
+  takes a query window which is limited by the UI."
+  [{:keys [recur-start recur-type], :as recur-pat}]
+  {:pre [(contains? recur-pat :recur-start)],
+   :post [(or (nil? %)
+              (= (recurrent-event-occurrences recur-pat
+                                              epoch
+                                              epoch
+                                              (day-num-to-date (inc (:daynum
+                                                                      %))))
+                 [%]))]}
+  (case recur-type
+    :day recur-start
+    :week (day-num-to-date (apply min
+                             (map #(soonest-day-of-week recur-start %)
+                               (:dow recur-pat))))
+    :month (or
+             ;; The current month has an occurrence.
+             (first (drop-while #(< (:daynum %) (:daynum recur-start))
+                                (select-dates-from-month-recur recur-pat
+                                                               (month-num
+                                                                 recur-start))))
+             ;; The following month(s) instead. The basic idea is that
+             ;; we keep iterating to find a month that satisfies the
+             ;; condition. Sometimes this will never satisfy, such as
+             ;; Feb 31. So we cannot allow infinite iteration. Instead
+             ;; we have an upper bound on the number of iterations.
+             (let [max-iter (case (:day-selection recur-pat)
+                              ;; If the day selection is :d, and if the
+                              ;; user wishes to select the 29th day.
+                              ;; Because the frequency may be a multiple of
+                              ;; 12, it may end up only selecting February.
+                              ;; The worst case scenario is when the
+                              ;; starting year is 25 (mod 400) and the
+                              ;; period is also 25. We need 15 iterations
+                              ;; to reach 0 (mod 400).
+                              :d 15
+                              ;; If the day selection is :dow, the worst
+                              ;; case scenario is selecting the fifth
+                              ;; occurrence of a certain day. Empirically
+                              ;; we need 457 iterations maximum if Feb is
+                              ;; possible, otherwise 120 iterations.
+                              :dow (if (= (:occ recur-pat) #{4})
+                                     (if (recur-month-possibly-feb
+                                           (:m recur-start)
+                                           (:freq recur-pat))
+                                       457
+                                       120)
+                                     1))]
+               (first (mapcat #(select-dates-from-month-recur recur-pat %)
+                        (take max-iter
+                              ;; Because we expect the (first) to
+                              ;; short-circuit so much computation here, we
+                              ;; do not use (range) due to it being a
+                              ;; chunked seq.
+                              (iterate #(+ % (:freq recur-pat))
+                                       (+ (:freq recur-pat)
+                                          (month-num recur-start))))))))
+    :year (or
+            ;; The current year has an occurrence.
+            (first (drop-while #(< (:daynum %) (:daynum recur-start))
+                               (select-dates-from-year-recur recur-pat
+                                                             (:y recur-start))))
+            ;; The following year(s) instead.
+            (let [max-iter
+                    (case (:day-selection recur-pat)
+                      ;; If the user wishes to select Feb 29, run
+                      ;; more iterations. The worst case scenario is
+                      ;; when the starting year is 25 (mod 400) and
+                      ;; the period is also 25. We need 15
+                      ;; iterations to reach 0 (mod 400).
+                      :md 15
+                      ;; Empirically we need 327 iterations in the worst
+                      ;; case if February is involved. If the month has
+                      ;; 30 days, 230 iterations. Otherwise 178.
+                      :occ-dow-month
+                        (let [max-iters-per-month #js [178 327 178 230 178 230
+                                                       178 178 230 178 230 178]]
+                          (reduce (fn [cur-max m]
+                                    (max cur-max (aget max-iters-per-month m)))
+                            0
+                            (:m recur-pat))))]
+              (first (mapcat #(select-dates-from-year-recur recur-pat %)
+                       (take max-iter
+                             (iterate #(+ % (:freq recur-pat))
+                                      (+ (:freq recur-pat)
+                                         (:y recur-start))))))))))
+
+(defn adjust-recur-start
+  "Adjusts the recur-start such that it coincides with the first day of actual
+  occurrence. "
+  [{:keys [recur-start], :as recur-pat}]
+  {:pre [(contains? recur-pat :recur-start)]}
+  ;; TODO: do not dissoc :recur-end for efficiency reasons
+  (let [adjusted-recur-start (find-first-start (dissoc recur-pat :recur-end))]
+    (if (or (nil? adjusted-recur-start)
+            (and (contains? recur-pat :recur-end)
+                 (>= (:daynum adjusted-recur-start)
+                     (:daynum (:recur-end recur-pat)))))
+      nil
+      (assoc recur-pat :recur-start adjusted-recur-start))))
 
 (defn merges-by
   "Merge sorted sequences, removing duplicates."
@@ -429,7 +538,13 @@
   [recur-pat]
   (let [start (if-let [start (:recur-start recur-pat)]
                 (if (> (:daynum start) 0)
-                  (str " from " (format-date-en-us start))))
+                  (str " from " (format-date-en-us start))
+                  " since time immemorial")
+                (case (:recur-type recur-pat)
+                  :day " from today"
+                  :week " from this or next week" ; TODO
+                  :month " from this month"
+                  :year " from this year"))
         until (if-let [until (:recur-end recur-pat)]
                 (str " until " (format-date-en-us until)))
         pat (case (:recur-type recur-pat)
@@ -538,6 +653,7 @@
           (< (first s1) (first s2))
             (recur (next s1) s2 (conj! result [(first s1) nil]))
           :else (recur s1 (next s2) (conj! result [nil (first s2)])))))
+
 
 ;; -------------------------
 ;; Command line history and search
@@ -837,6 +953,24 @@
                    :events
                    {:primary-key :evname}
                    (into {} (map #(vector (:evname %) %) (us-bank-holidays)))))
+
+(defn add-event-to-env
+  [env {:keys [evname], :as event}]
+  {:pre [(event? event)]}
+  (let [default-start (today)
+        event (update event
+                      :recur-pats
+                      (fn [pats]
+                        (into []
+                              (keep #(adjust-recur-start
+                                       (if (:recur-start %)
+                                         %
+                                         (assoc % :recur-start default-start)))
+                                    pats))))]
+    (if (and (empty? (:specific-occs event)) (empty? (:recur-pats event)))
+      (show-message env
+                    "The event will never occur, therefore it is not added.")
+      (kv/update-val env :events evname merge-event event))))
 
 ;; -------------------------
 ;; Control language
@@ -1255,7 +1389,7 @@
       (show-message env
                     (if (and (map? e) (:date-outside-range e))
                       "The specified date is outside the supported range."
-                      "An unknown error occurred.")))))
+                      (do (js/console.log e) "An unknown error occurred."))))))
 
 (defn execute-input
   [env {:keys [input]}]

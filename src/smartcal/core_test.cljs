@@ -756,64 +756,76 @@
           (c/ymd-to-date 2024 0 28) [(get example-events 4)]})))
 
 (deftest format-recur-pat
-  (is (= (c/format-recur-pat {:recur-type :day, :freq 1}) "every day"))
-  (is (= (c/format-recur-pat {:recur-type :day, :freq 3}) "every 3 days"))
-  (is (= (c/format-recur-pat {:recur-type :day, :freq 300}) "every 300 days"))
+  (is (= (c/format-recur-pat {:recur-type :day, :freq 1})
+         "every day from today"))
+  (is (= (c/format-recur-pat {:recur-type :day, :freq 3})
+         "every 3 days from today"))
+  (is (= (c/format-recur-pat {:recur-type :day, :freq 300})
+         "every 300 days from today"))
   (is (= (c/format-recur-pat {:recur-type :day,
                               :freq 300,
                               :recur-start (c/ymd-to-date 2020 10 1)})
          "every 300 days from Nov 1, 2020"))
   (is (= (c/format-recur-pat
            {:recur-type :day, :freq 300, :recur-start c/epoch})
-         "every 300 days"))
+         "every 300 days since time immemorial"))
   (is (= (c/format-recur-pat {:recur-type :week, :freq 1, :dow #{1}})
-         "every week on Mon"))
+         "every week on Mon from this or next week"))
   (is (= (c/format-recur-pat {:recur-type :week, :freq 1, :dow #{1 3 5}})
-         "every week on Mon, Wed, Fri"))
+         "every week on Mon, Wed, Fri from this or next week"))
   (is (= (c/format-recur-pat {:recur-type :week, :freq 1, :dow #{1 3 5}})
-         "every week on Mon, Wed, Fri"))
+         "every week on Mon, Wed, Fri from this or next week"))
   (is (= (c/format-recur-pat
            {:recur-type :month, :freq 1, :day-selection :d, :d #{1 3 5}})
-         "every month on the 1st, 3rd, 5th"))
+         "every month on the 1st, 3rd, 5th from this month"))
   (is (= (c/format-recur-pat
            {:recur-type :month, :freq 2, :day-selection :d, :d #{1 11 21 31}})
-         "every 2 months on the 1st, 11th, 21st, 31st"))
+         "every 2 months on the 1st, 11th, 21st, 31st from this month"))
   (is (=
         (c/format-recur-pat
           {:recur-type :month, :freq 2, :day-selection :dow, :dow 1, :occ #{0}})
-        "every 2 months on the first Mon"))
+        "every 2 months on the first Mon from this month"))
   (is
     (=
       (c/format-recur-pat
         {:recur-type :month, :freq 2, :day-selection :dow, :dow 1, :occ #{0 2}})
-      "every 2 months on the first, third Mon"))
+      "every 2 months on the first, third Mon from this month"))
   (is (= (c/format-recur-pat
            {:recur-type :year, :freq 1, :day-selection :md, :m 1, :d 2})
-         "every year on Feb 2"))
+         "every year on Feb 2 from this year"))
   (is (= (c/format-recur-pat {:recur-type :year,
                               :freq 1,
                               :day-selection :occ-dow-month,
                               :occ #{-1},
                               :m #{5},
                               :dow 5})
-         "every year on the last Fri of Jun")))
+         "every year on the last Fri of Jun from this year"))
+  (is (= (c/format-recur-pat {:recur-type :year,
+                              :freq 1,
+                              :day-selection :occ-dow-month,
+                              :occ #{-1},
+                              :m #{5},
+                              :dow 5,
+                              :recur-start c/epoch})
+         "every year on the last Fri of Jun since time immemorial")))
 
 (deftest format-event
   (is (= (c/format-event (c/event-from-single-occ "x" (c/ymd-to-date 2010 1 1))
                          nil
                          nil)
          "an event named \"x\" on Feb 1, 2010"))
-  (is (= (c/format-event (c/event-from-single-rec "x"
-                                                  {:recur-type :year,
-                                                   :freq 1,
-                                                   :day-selection
-                                                     :occ-dow-month,
-                                                   :occ #{-1},
-                                                   :m #{5},
-                                                   :dow 5})
-                         nil
-                         nil)
-         "an event named \"x\" repeating every year on the last Fri of Jun")))
+  (is
+    (=
+      (c/format-event (c/event-from-single-rec "x"
+                                               {:recur-type :year,
+                                                :freq 1,
+                                                :day-selection :occ-dow-month,
+                                                :occ #{-1},
+                                                :m #{5},
+                                                :dow 5})
+                      nil
+                      nil)
+      "an event named \"x\" repeating every year on the last Fri of Jun from this year")))
 
 (deftest simplified-glob-to-regex
   (is (= (c/simplified-glob-to-regex "abc*def") "abc.*def"))
@@ -1090,3 +1102,217 @@
   (is (= (c/align-sorted-seqs [] [1 2]) [[nil 1] [nil 2]]))
   (is (= (c/align-sorted-seqs [1 2 3] [1 2 4]) [[1 1] [2 2] [3 nil] [nil 4]]))
   (is (= (c/align-sorted-seqs [1 2] [0 3]) [[nil 0] [1 nil] [2 nil] [nil 3]])))
+
+(deftest recur-month-possibly-feb
+  (is (c/recur-month-possibly-feb 1 1) "already Feb")
+  (is (c/recur-month-possibly-feb 3 1) "every month")
+  (is (not (c/recur-month-possibly-feb 3 3)) "only April July October January")
+  (is (not (c/recur-month-possibly-feb 3 4)) "only April August December")
+  (is (not (c/recur-month-possibly-feb 3 12)) "only April")
+  (is (not (c/recur-month-possibly-feb 3 24)) "only April every other year"))
+
+(deftest find-first-start
+  (is (= (c/find-first-start
+           {:recur-type :day, :freq 1, :recur-start (c/ymd-to-date 2024 9 18)})
+         (c/ymd-to-date 2024 9 18)))
+  (is (= (c/find-first-start
+           {:recur-type :day, :freq 3, :recur-start (c/ymd-to-date 2024 9 18)})
+         (c/ymd-to-date 2024 9 18)))
+  (is (= (c/find-first-start {:recur-type :week,
+                              :freq 1,
+                              :dow #{1},
+                              :recur-start (c/ymd-to-date 2024 0 1)})
+         (c/ymd-to-date 2024 0 1)))
+  (is (= (c/find-first-start {:recur-type :week,
+                              :freq 1,
+                              :dow #{2},
+                              :recur-start (c/ymd-to-date 2024 0 1)})
+         (c/ymd-to-date 2024 0 2)))
+  (is (= (c/find-first-start {:recur-type :week,
+                              :freq 1,
+                              :dow #{1 5},
+                              :recur-start (c/ymd-to-date 2024 0 1)})
+         (c/ymd-to-date 2024 0 1)))
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 1,
+                              :day-selection :d,
+                              :d #{1},
+                              :recur-start (c/ymd-to-date 2024 0 1)})
+         (c/ymd-to-date 2024 0 1)))
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 1,
+                              :day-selection :d,
+                              :d #{8},
+                              :recur-start (c/ymd-to-date 2024 0 1)})
+         (c/ymd-to-date 2024 0 8)))
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 3,
+                              :day-selection :d,
+                              :d #{8 18 28},
+                              :recur-start (c/ymd-to-date 2024 0 30)})
+         (c/ymd-to-date 2024 3 8)))
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 1,
+                              :day-selection :d,
+                              :d #{31},
+                              :recur-start (c/ymd-to-date 2024 1 1)})
+         (c/ymd-to-date 2024 2 31))
+      "skips over non-existent 31st days")
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 2,
+                              :day-selection :d,
+                              :d #{31},
+                              :recur-start (c/ymd-to-date 2024 1 1)})
+         (c/ymd-to-date 2024 7 31))
+      "skips over non-existent 31st days and also every second month")
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 300,
+                              :day-selection :d,
+                              :d #{29},
+                              :recur-start (c/ymd-to-date 2025 1 1)})
+         (c/ymd-to-date 2400 1 29))
+      "Feb 29th every 25 years => next occ 375 years later")
+  (is (nil? (c/find-first-start {:recur-type :month,
+                                 :freq 12,
+                                 :day-selection :d,
+                                 :d #{31},
+                                 :recur-start (c/ymd-to-date 2024 3 1)}))
+      "cannot adjust start date as no events occur")
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 1,
+                              :day-selection :dow,
+                              :dow 1,
+                              :occ #{0},
+                              :recur-start (c/ymd-to-date 2024 0 1)})
+         (c/ymd-to-date 2024 0 1)))
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 1,
+                              :day-selection :dow,
+                              :dow 1,
+                              :occ #{4},
+                              :recur-start (c/ymd-to-date 2024 0 1)})
+         (c/ymd-to-date 2024 0 29))
+      "adjusts to different day in the same month")
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 2,
+                              :day-selection :dow,
+                              :dow 1,
+                              :occ #{4},
+                              :recur-start (c/ymd-to-date 2024 0 30)})
+         (c/ymd-to-date 2024 6 29))
+      "adjusts to different month")
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 12,
+                              :day-selection :dow,
+                              :dow 1,
+                              :occ #{4},
+                              :recur-start (c/ymd-to-date 2020 1 1)})
+         (c/ymd-to-date 2044 1 29))
+      "fifth Monday in February")
+  (is (nil? (c/find-first-start {:recur-type :month,
+                                 :freq (* 12 25),
+                                 :day-selection :dow,
+                                 :dow 1,
+                                 :occ #{4},
+                                 :recur-start (c/ymd-to-date 2020 1 1)}))
+      "cannot find fifth Monday in February every 25 years")
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 293,
+                              :day-selection :dow,
+                              :dow 5,
+                              :occ #{4},
+                              :recur-start (c/ymd-to-date 2235 7 1)})
+         (c/ymd-to-date 13394 0 31))
+      "fifth Friday every 293 months")
+  (is (= (c/find-first-start {:recur-type :month,
+                              :freq 135,
+                              :day-selection :dow,
+                              :dow 4,
+                              :occ #{4},
+                              :recur-start (c/ymd-to-date 2077 2 1)})
+         (c/ymd-to-date 3427 2 29))
+      "fifth Thursday every 293 months")
+  (is (= (c/find-first-start {:recur-type :year,
+                              :freq 1,
+                              :day-selection :md,
+                              :m 11,
+                              :d 25,
+                              :recur-start (c/ymd-to-date 2020 0 1)})
+         (c/ymd-to-date 2020 11 25))
+      "adjusts to later this year")
+  (is (= (c/find-first-start {:recur-type :year,
+                              :freq 1,
+                              :day-selection :md,
+                              :m 1,
+                              :d 29,
+                              :recur-start (c/ymd-to-date 1995 0 1)})
+         (c/ymd-to-date 1996 1 29))
+      "finds Feb 29")
+  (is (= (c/find-first-start {:recur-type :year,
+                              :freq 5,
+                              :day-selection :md,
+                              :m 1,
+                              :d 29,
+                              :recur-start (c/ymd-to-date 1996 10 1)})
+         (c/ymd-to-date 2016 1 29))
+      "finds Feb 29 every five years (20 years later)")
+  (is (= (c/find-first-start {:recur-type :year,
+                              :freq 25,
+                              :day-selection :md,
+                              :m 1,
+                              :d 29,
+                              :recur-start (c/ymd-to-date 2025 2 1)})
+         (c/ymd-to-date 2400 1 29))
+      "finds Feb 29 every 25 years (375 years later)")
+  (is (nil? (c/find-first-start {:recur-type :year,
+                                 :freq 1,
+                                 :day-selection :md,
+                                 :m 3,
+                                 :d 31,
+                                 :recur-start (c/ymd-to-date 1995 0 1)}))
+      "cannot find April 31")
+  (is (= (c/find-first-start {:recur-type :year,
+                              :freq 1,
+                              :day-selection :occ-dow-month,
+                              :dow 1,
+                              :m #{1},
+                              :occ #{4},
+                              :recur-start (c/ymd-to-date 2016 2 1)})
+         (c/ymd-to-date 2044 1 29))
+      "fifth Monday in February every year")
+  (is (= (c/find-first-start {:recur-type :year,
+                              :freq 8,
+                              :day-selection :occ-dow-month,
+                              :dow 1,
+                              :m #{1},
+                              :occ #{4},
+                              :recur-start (c/ymd-to-date 2016 2 1)})
+         (c/ymd-to-date 2072 1 29))
+      "fifth Monday in February every 8 years")
+  (is (= (c/find-first-start {:recur-type :year,
+                              :freq 131,
+                              :day-selection :occ-dow-month,
+                              :dow 1,
+                              :m #{1},
+                              :occ #{4},
+                              :recur-start (c/ymd-to-date 2035 0 1)})
+         (c/ymd-to-date 44872 1 29))
+      "fifth Monday in February every 131 years")
+  (is (= (c/find-first-start {:recur-type :year,
+                              :freq 231,
+                              :day-selection :occ-dow-month,
+                              :dow 4,
+                              :m #{2},
+                              :occ #{4},
+                              :recur-start (c/ymd-to-date 2154 0 1)})
+         (c/ymd-to-date 43272 2 31))
+      "fifth Thursday in March every 231 years")
+  (is (= (c/find-first-start {:recur-type :year,
+                              :freq 231,
+                              :day-selection :occ-dow-month,
+                              :dow 6,
+                              :m #{3},
+                              :occ #{4},
+                              :recur-start (c/ymd-to-date 2142 0 1)})
+         (c/ymd-to-date 55272 3 30))
+      "fifth Saturday in April every 231 years"))
