@@ -233,17 +233,16 @@
                                      7))]
     (into [] all-occurrences)))
 
-(defn get-neg
-  "Just like get on vector except it supports negative indexing."
-  [v i]
-  (get v (if (>= i 0) i (+ (count v) i))))
-
 (defn all-nd-weekdays-of-month
   [occurrences day-of-week m y]
-  (let [all-dows (weekdays-of-month day-of-week m y)]
-    (->> occurrences
-         (keep #(get-neg all-dows %))
-         (sort-by :d))))
+  {:pre [(set? occurrences)]}
+  (let [all-dows (weekdays-of-month day-of-week m y)
+        cnt (count all-dows)]
+    (keep-indexed (fn [idx date]
+                    (if (or (contains? occurrences idx)
+                            (contains? occurrences (- idx cnt)))
+                      date))
+                  all-dows)))
 
 (defn select-dates-from-week-recur
   [recur-pat weeknum]
