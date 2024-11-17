@@ -245,36 +245,45 @@
                   all-dows)))
 
 (defn select-dates-from-week-recur
-  [recur-pat weeknum]
+  [recur-pat weeknums]
   {:pre [(keyword-identical? :week (:recur-type recur-pat))]}
-  (map #(week-num-day-to-date weeknum %) (sort (:dow recur-pat))))
+  (for [weeknum weeknums
+        dow (sort (:dow recur-pat))]
+    (week-num-day-to-date weeknum dow)))
 
 (defn select-dates-from-month-recur
-  "Select days from a monthly recurring pattern according to :day-selection."
-  [recur-pat monthnum]
+  [recur-pat monthnums]
   {:pre [(keyword-identical? :month (:recur-type recur-pat))]}
   (case (:day-selection recur-pat)
-    :d (keep #(let [date (month-num-day-to-date monthnum %)]
-                ;; Need to filter away non-existent dates such as Feb 31
-                ;; instead of wrapping.
-                (if (= (:d date) %) date))
-             (sort (:d recur-pat)))
-    :dow (all-nd-weekdays-of-month (:occ recur-pat)
-                                   (:dow recur-pat)
-                                   monthnum
-                                   1600)))
+    :d (for [monthnum monthnums
+             d (sort (:d recur-pat))
+             :let [date (month-num-day-to-date monthnum d)]
+             ;; Need to filter away non-existent dates such as Feb 31
+             ;; instead of wrapping.
+             :when (= (:d date) d)]
+         date)
+    :dow (for [monthnum monthnums
+               dt (all-nd-weekdays-of-month (:occ recur-pat)
+                                            (:dow recur-pat)
+                                            monthnum
+                                            1600)]
+           dt)))
 
 (defn select-dates-from-year-recur
-  [recur-pat y]
+  [recur-pat years]
   {:pre [(keyword-identical? :year (:recur-type recur-pat))]}
   (case (:day-selection recur-pat)
-    :md (let [date (ymd-to-date y (:m recur-pat) (:d recur-pat))]
-          ;; Need to filter away non-existent dates such as Feb 31 instead
-          ;; of wrapping.
-          (if (and (= (:d date) (:d recur-pat))) [date]))
+    :md (for [y years
+              :let [date (ymd-to-date y (:m recur-pat) (:d recur-pat))]
+              ;; Need to filter away non-existent dates such as Feb 31
+              ;; instead of wrapping.
+              :when (= (:d date) (:d recur-pat))]
+          date)
     :occ-dow-month
-      (mapcat #(all-nd-weekdays-of-month (:occ recur-pat) (:dow recur-pat) % y)
-        (:m recur-pat))))
+      (for [y years
+            m (sort (:m recur-pat))
+            dt (all-nd-weekdays-of-month (:occ recur-pat) (:dow recur-pat) m y)]
+        dt)))
 
 (defn recurrent-event-occurrences
   [{:keys [recur-type], :as recur-pat} default-recur-start query-start
@@ -301,12 +310,11 @@
                                                actual-start
                                                actual-end)
         all-matching-days
-          (mapcat #(case recur-type
-                     :day [(day-num-to-date %)]
-                     :week (select-dates-from-week-recur recur-pat %)
-                     :month (select-dates-from-month-recur recur-pat %)
-                     :year (select-dates-from-year-recur recur-pat %))
-            selected-periods)]
+          (case recur-type
+            :day (map day-num-to-date selected-periods)
+            :week (select-dates-from-week-recur recur-pat selected-periods)
+            :month (select-dates-from-month-recur recur-pat selected-periods)
+            :year (select-dates-from-year-recur recur-pat selected-periods))]
     (drop-while #(< (:daynum %) actual-start-daynum)
                 (take-while #(< (:daynum %) actual-end-daynum)
                             all-matching-days))))
@@ -344,87 +352,92 @@
                  [%]))]}
   (case recur-type
     :day recur-start
-    :week (or
-            ;; The current week has an occurrence.
-            (first (drop-while #(< (:daynum %) (:daynum recur-start))
-                               (select-dates-from-week-recur recur-pat
-                                                             (week-num
-                                                               recur-start))))
-            ;; The following week instead.
-            (first (select-dates-from-week-recur recur-pat
-                                                 (+ (:freq recur-pat)
-                                                    (week-num recur-start)))))
-    :month (or
-             ;; The current month has an occurrence.
-             (first (drop-while #(< (:daynum %) (:daynum recur-start))
-                                (select-dates-from-month-recur recur-pat
-                                                               (month-num
-                                                                 recur-start))))
-             ;; The following month(s) instead. The basic idea is that
-             ;; we keep iterating to find a month that satisfies the
-             ;; condition. Sometimes this will never satisfy, such as
-             ;; Feb 31. So we cannot allow infinite iteration. Instead
-             ;; we have an upper bound on the number of iterations.
-             (let [max-iter (case (:day-selection recur-pat)
-                              ;; If the day selection is :d, and if the
-                              ;; user wishes to select the 29th day.
-                              ;; Because the frequency may be a multiple of
-                              ;; 12, it may end up only selecting February.
-                              ;; The worst case scenario is when the
-                              ;; starting year is 25 (mod 400) and the
-                              ;; period is also 25. We need 15 iterations
-                              ;; to reach 0 (mod 400).
-                              :d 15
-                              ;; If the day selection is :dow, the worst
-                              ;; case scenario is selecting the fifth
-                              ;; occurrence of a certain day. Empirically
-                              ;; we need 457 iterations maximum if Feb is
-                              ;; possible, otherwise 120 iterations.
-                              :dow (if (= (:occ recur-pat) #{4})
-                                     (if (recur-month-possibly-feb
-                                           (:m recur-start)
-                                           (:freq recur-pat))
-                                       457
-                                       120)
-                                     1))]
-               (first (mapcat #(select-dates-from-month-recur recur-pat %)
-                        (take max-iter
-                              ;; Because we expect the (first) to
-                              ;; short-circuit so much computation here, we
-                              ;; do not use (range) due to it being a
-                              ;; chunked seq.
-                              (iterate #(+ % (:freq recur-pat))
-                                       (+ (:freq recur-pat)
-                                          (month-num recur-start))))))))
-    :year (or
-            ;; The current year has an occurrence.
-            (first (drop-while #(< (:daynum %) (:daynum recur-start))
-                               (select-dates-from-year-recur recur-pat
-                                                             (:y recur-start))))
-            ;; The following year(s) instead.
-            (let [max-iter
-                    (case (:day-selection recur-pat)
-                      ;; If the user wishes to select Feb 29, run
-                      ;; more iterations. The worst case scenario is
-                      ;; when the starting year is 25 (mod 400) and
-                      ;; the period is also 25. We need 15
-                      ;; iterations to reach 0 (mod 400).
-                      :md 15
-                      ;; Empirically we need 327 iterations in the worst
-                      ;; case if February is involved. If the month has
-                      ;; 30 days, 230 iterations. Otherwise 178.
-                      :occ-dow-month
-                        (let [max-iters-per-month #js [178 327 178 230 178 230
-                                                       178 178 230 178 230 178]]
-                          (reduce (fn [cur-max m]
-                                    (max cur-max (aget max-iters-per-month m)))
-                            0
-                            (:m recur-pat))))]
-              (first (mapcat #(select-dates-from-year-recur recur-pat %)
-                       (take max-iter
-                             (iterate #(+ % (:freq recur-pat))
-                                      (+ (:freq recur-pat)
-                                         (:y recur-start))))))))))
+    :week (first (drop-while #(< (:daynum %) (:daynum recur-start))
+                             (select-dates-from-week-recur
+                               recur-pat
+                               (let [wn (week-num recur-start)]
+                                 [wn (+ wn (:freq recur-pat))]))))
+    :month
+      (first
+        (drop-while
+          #(< (:daynum %) (:daynum recur-start))
+          (select-dates-from-month-recur
+            recur-pat
+            (cons
+              ;; The current month has an occurrence.
+              (month-num recur-start)
+              ;; The following month(s) instead. The basic idea is that we
+              ;; keep iterating to find a month that satisfies the
+              ;; condition. Sometimes this will never satisfy, such as. Feb
+              ;; 31. So we cannot allow infinite iteration. Instead we have
+              ;; an upper bound on the number of iterations. And lazy-seq
+              ;; is just here to avoid the computation for this upper bound
+              ;; when the current month is already enough.
+              (lazy-seq
+                (let [max-iter (case (:day-selection recur-pat)
+                                 ;; If the day selection is :d, and if the
+                                 ;; user wishes to select the 29th day.
+                                 ;; Because the frequency may be a multiple
+                                 ;; of 12, it may end up only selecting
+                                 ;; February. The worst case scenario is
+                                 ;; when the starting year is 25 (mod 400)
+                                 ;; and the period is also 25. We need 15
+                                 ;; iterations to reach 0 (mod 400).
+                                 :d 15
+                                 ;; If the day selection is :dow, the worst
+                                 ;; case scenario is selecting the fifth
+                                 ;; occurrence of a certain day.
+                                 ;; Empirically we need 457 iterations
+                                 ;; maximum if Feb is possible, otherwise
+                                 ;; 120 iterations.
+                                 :dow (if (= (:occ recur-pat) #{4})
+                                        (if (recur-month-possibly-feb
+                                              (:m recur-start)
+                                              (:freq recur-pat))
+                                          457
+                                          120)
+                                        1))
+                      step (:freq recur-pat)
+                      start (+ step (month-num recur-start))
+                      end (+ start (* max-iter step))]
+                  (range start end step)))))))
+    :year
+      (first
+        (drop-while
+          #(< (:daynum %) (:daynum recur-start))
+          (select-dates-from-year-recur
+            recur-pat
+            (cons
+              ;; The current year has an occurrence.
+              (:y recur-start)
+              ;; The following year(s) instead.
+              (lazy-seq
+                (let [max-iter (case (:day-selection recur-pat)
+                                 ;; If the user wishes to select Feb 29,
+                                 ;; run more iterations. The worst case
+                                 ;; scenario is when the starting year is
+                                 ;; 25 (mod 400) and the period is also 25.
+                                 ;; We need 15 iterations to reach 0 (mod
+                                 ;; 400).
+                                 :md 15
+                                 ;; Empirically we need 327 iterations in
+                                 ;; the worst case if February is involved.
+                                 ;; If the month has
+                                 ;; 30 days, 230 iterations. Otherwise 178.
+                                 :occ-dow-month
+                                   (let [max-iters-per-month
+                                           #js [178 327 178 230 178 230 178 178
+                                                230 178 230 178]]
+                                     (reduce (fn [cur-max m]
+                                               (max cur-max
+                                                    (aget max-iters-per-month
+                                                          m)))
+                                       0
+                                       (:m recur-pat))))
+                      step (:freq recur-pat)
+                      start (+ step (:y recur-start))
+                      end (+ start (* max-iter step))]
+                  (range start end step)))))))))
 
 (defn adjust-recur-start
   "Adjusts the recur-start such that it coincides with the first day of actual

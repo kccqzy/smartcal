@@ -616,7 +616,7 @@
       "skips over non-existent 31st days and also every second month")
   (is (= (c/select-dates-from-month-recur
            {:recur-type :month, :day-selection :dow, :dow 1, :occ #{0}}
-           (c/month-num {:y 2024, :m 0}))
+           [(c/month-num {:y 2024, :m 0})])
          [(c/ymd-to-date 2024 0 1)]))
   (is (= (c/recurrent-event-occurrences
            {:recur-type :month, :freq 1, :day-selection :dow, :dow 1, :occ #{0}}
