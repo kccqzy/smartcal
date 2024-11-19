@@ -1343,3 +1343,41 @@
                               :recur-start (c/ymd-to-date 2142 0 1)})
          (c/ymd-to-date 55272 3 30))
       "fifth Saturday in April every 231 years"))
+
+(deftest common-prefix
+  (is (= (c/common-prefix "abcd" "abce") "abc"))
+  (is (= (c/common-prefix "ab" "ab") "ab"))
+  (is (= (c/common-prefix "cd" "ab") ""))
+  (is (= (c/common-prefix "" "ab") ""))
+  (is (= (c/common-prefix "" "") ""))
+  (is (= (c/common-prefix "Jan" "January") "Jan")))
+
+(deftest common-prefixes
+  (is (= (c/common-prefixes []) nil))
+  (is (= (c/common-prefixes ["Jan"]) "Jan"))
+  (is (= (c/common-prefixes ["Jan" "Feb"]) ""))
+  (is (= (c/common-prefixes ["Jan" "Janu"]) "Jan"))
+  (is (= (c/common-prefixes ["Jan" "Janu" "January"]) "Jan"))
+  (is (= (c/common-prefixes ["F" "Janu" "January"]) "")))
+
+(defn parse-and-find-completion
+  [input]
+  (c/find-parser-based-completion
+    (c/cmdline-parser input :total true :unhide :all)))
+
+(deftest find-parser-based-completion
+  (is (= (parse-and-find-completion "add \"x\" every 3 days") nil))
+  (is (= (parse-and-find-completion "add \"x\" every 3 da")
+         "add \"x\" every 3 days"))
+  (is (= (parse-and-find-completion "add \"x\" every 3 years")
+         "add \"x\" every 3 years "))
+  (is (= (parse-and-find-completion "add \"x\" every 3 years ")
+         "add \"x\" every 3 years on"))
+  (is (= (parse-and-find-completion "add \"x\" every 3 years o")
+         "add \"x\" every 3 years on"))
+  (is (= (parse-and-find-completion "add \"x\" every 3 years on")
+         "add \"x\" every 3 years on "))
+  (is (= (parse-and-find-completion "add \"x\" every 3 years on ") nil))
+  (is (= (parse-and-find-completion "add \"x\" every 3 years on  ") nil))
+  (is (= (parse-and-find-completion "add \"x\" every 3 years on Ja")
+         "add \"x\" every 3 years on Jan")))

@@ -814,12 +814,12 @@
   [ui-state]
   (history-search-navigate ui-state false))
 
-(defn history-search-navigate-right
-  [{:keys [cmdline-input], :as ui-state}]
+(defn commit-current-completion
+  [{:keys [cmdline-input], :as ui-state} current-completion]
   ;; Disallows empty input, and sets the command
   (if (empty? cmdline-input)
     ui-state
-    (if-let [comp (history-search-current-completion ui-state)]
+    (if-let [comp current-completion]
       (assoc ui-state :cmdline-input comp)
       ui-state)))
 
@@ -833,9 +833,10 @@
 (sg/reg-event :app
               :cmdline-arrow-down
               #(update % :ui history-search-navigate-down))
-(sg/reg-event :app
-              :cmdline-arrow-right
-              #(update % :ui history-search-navigate-right))
+(sg/reg-event
+  :app
+  :cmdline-arrow-right
+  #(update %1 :ui commit-current-completion (:current-completion %2)))
 (sg/reg-event :app
               :cmdline-history-finish
               #(update % :ui history-search-navigate-finish))
@@ -1131,6 +1132,51 @@
                      (throw (js/Error "unexpected add-cmd structure"))))])}
     parsed))
 
+(defn common-prefix
+  [s1 s2]
+  {:pre [(string? s1) (string? s2)]}
+  (let [maxlen (min (.-length s1) (.-length s2))]
+    (loop [i 0]
+      (if (== (.charAt s1 i) (.charAt s2 i))
+        (if (== i maxlen) (.substring s1 0 i) (recur (inc i)))
+        (.substring s1 0 i)))))
+
+(defn common-prefixes
+  "Returns the common prefix of a seq of strings. If the seq is empty, returns
+  nil. Otherwise returns a string. If there is no common prefix, returns the
+  empty string. (Callers usually do not distinguish between nil or empty string,
+  and they can use empty? to do that.)"
+  [str-seq]
+  {:pre [(every? string? str-seq)]}
+  (loop [cur-prefix nil
+         ss str-seq]
+    (cond (empty? ss) cur-prefix
+          (nil? cur-prefix) (recur (first ss) (rest ss))
+          :else (let [new-common-prefix (common-prefix cur-prefix (first ss))]
+                  (if (== 0 (.-length new-common-prefix))
+                    new-common-prefix
+                    (recur new-common-prefix (rest ss)))))))
+
+(defn find-parser-based-completion
+  [total-parsed]
+  (if (insta/failure? total-parsed)
+    (let [{:keys [text index reason], :as failure} (insta/get-failure
+                                                     total-parsed)
+          failed-text (.substring text index)
+          expected-matching-token
+            (keep #(if-let [e (:expecting %)]
+                     (case (:tag %)
+                       :string (if (.startsWith e failed-text)
+                                 (.substring e (.-length failed-text)))
+                       :regexp (if (and (== (.-length failed-text) 0)
+                                        (= "/^ +/" (.toString e))
+                                        (not (.endsWith text " ")))
+                                 " ")
+                       nil))
+                  reason)
+          suggested-suffix (common-prefixes expected-matching-token)]
+      (if (empty? suggested-suffix) nil (str text suggested-suffix)))))
+
 ;; -------------------------
 ;; Components
 
@@ -1194,7 +1240,7 @@
     (<<
       [:div#help
        [:p
-        "This is a smart calendar app that runs completely in your browser. It is controlled by typing commands into the command area at the bottom."]
+        "This is a smart calendar app that runs completely in your browser. It is controlled by typing commands into the command area at the bottom. The command area supports completion, history search, and a preview. Use the right arrow to accept the completion. Use the up or down arrow to recall the command history."]
        [:details {:open true} [:summary "Navigating the calendar"]
         [:p "Type " [:code "next"] " or " [:code "prev"]
          " to move the calendar view forward or backward by one week. When followed with an integer, the calendar view is moved by that many weeks. For example "
@@ -1439,8 +1485,10 @@
   (bind input (sg/kv-lookup :ui :cmdline-input))
   (bind parsed (cmdline-parser input :total true :unhide :all))
   (bind did-fail (insta/failure? parsed))
-  (bind possible-history-completion
-        (if did-fail (sg/query #(history-search-current-completion (:ui %)))))
+  (bind possible-completion
+        (if did-fail
+          (or (sg/query #(history-search-current-completion (:ui %)))
+              (find-parser-based-completion parsed))))
   (render
     (<<
       [:div#cmdline
@@ -1466,8 +1514,8 @@
            (<< [:span.comment
                 (if did-fail
                   ;; Try to search for an auto-completion.
-                  (if possible-history-completion
-                    (.substring possible-history-completion (.-length input))
+                  (if possible-completion
+                    (.substring possible-completion (.-length input))
                     " # Parse Error")
                   (<< " # "
                       (explain-input-component input start until)))]))]]]))
@@ -1547,7 +1595,10 @@
                                     (+ cmdline-prompt-length (.-length input)))
                             (.preventDefault e)
                             (.stopPropagation e)
-                            (sg/run-tx env {:e :cmdline-arrow-right}))
+                            (sg/run-tx env
+                                       {:e :cmdline-arrow-right,
+                                        :current-completion
+                                          possible-completion}))
              "ArrowLeft" nil
              (sg/run-tx env {:e :cmdline-history-finish})))))
 
