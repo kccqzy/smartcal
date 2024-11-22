@@ -1381,3 +1381,401 @@
   (is (= (parse-and-find-completion "add \"x\" every 3 years on  ") nil))
   (is (= (parse-and-find-completion "add \"x\" every 3 years on Ja")
          "add \"x\" every 3 years on Jan")))
+
+(deftest split-recs-without-overlap
+  (is (= (c/split-recs-without-overlap
+           [{:recur-period-start 200, :recur-period-end 300, :id 0}])
+         [{:recur-period-start 200, :recur-period-end 300, :id 0}]))
+  (is (= (c/split-recs-without-overlap
+           [{:recur-period-start 200, :recur-period-end 300, :id 0}
+            {:recur-period-start 100, :recur-period-end 500, :id 1}])
+         [{:recur-period-start 200, :recur-period-end 300, :id 0}
+          {:recur-period-start 100, :recur-period-end 200, :id 1}
+          {:recur-period-start 200, :recur-period-end 300, :id 1}
+          {:recur-period-start 300, :recur-period-end 500, :id 1}]))
+  (is (= (c/split-recs-without-overlap
+           [{:recur-period-start 200, :recur-period-end 300, :id 0}
+            {:recur-period-start 100, :recur-period-end nil, :id 1}])
+         [{:recur-period-start 200, :recur-period-end 300, :id 0}
+          {:recur-period-start 100, :recur-period-end 200, :id 1}
+          {:recur-period-start 200, :recur-period-end 300, :id 1}
+          {:recur-period-start 300, :recur-period-end nil, :id 1}]))
+  (is (= (c/split-recs-without-overlap
+           [{:recur-period-start 200, :recur-period-end nil, :id 0}
+            {:recur-period-start 100, :recur-period-end nil, :id 1}])
+         [{:recur-period-start 200, :recur-period-end nil, :id 0}
+          {:recur-period-start 100, :recur-period-end 200, :id 1}
+          {:recur-period-start 200, :recur-period-end nil, :id 1}]))
+  (is (= (c/split-recs-without-overlap
+           [{:recur-period-start 2, :recur-period-end 4, :id 0}
+            {:recur-period-start 2, :recur-period-end 6, :id 1}
+            {:recur-period-start 3, :recur-period-end 9, :id 2}])
+         [{:recur-period-start 2, :recur-period-end 3, :id 0}
+          {:recur-period-start 3, :recur-period-end 4, :id 0}
+          {:recur-period-start 2, :recur-period-end 3, :id 1}
+          {:recur-period-start 3, :recur-period-end 4, :id 1}
+          {:recur-period-start 4, :recur-period-end 6, :id 1}
+          {:recur-period-start 3, :recur-period-end 4, :id 2}
+          {:recur-period-start 4, :recur-period-end 6, :id 2}
+          {:recur-period-start 6, :recur-period-end 9, :id 2}])))
+
+(deftest divisors
+  (is (= (c/divisors 1) [1]))
+  (is (= (c/divisors 2) [1 2]))
+  (is (= (c/divisors 4) [1 2 4]))
+  (is (= (c/divisors 19) [1 19]))
+  (is (= (c/divisors 24) [1 2 3 4 6 8 12 24]))
+  (is (= (c/divisors 49) [1 7 49])))
+
+(deftest rec-group-remove-redundant-high-divisors
+  (is (= (c/rec-group-remove-redundant-high-divisors
+           [{:freq 2, :recur-period-remainder 0}
+            {:freq 2, :recur-period-remainder 0}])
+         [{:freq 2, :recur-period-remainder 0}]))
+  (is (= (c/rec-group-remove-redundant-high-divisors
+           [{:freq 4, :recur-period-remainder 0}
+            {:freq 2, :recur-period-remainder 0}])
+         [{:freq 2, :recur-period-remainder 0}]))
+  (is (= (c/rec-group-remove-redundant-high-divisors
+           [{:freq 4, :recur-period-remainder 3}
+            {:freq 2, :recur-period-remainder 1}])
+         [{:freq 2, :recur-period-remainder 1}]))
+  (is (= (c/rec-group-remove-redundant-high-divisors
+           [{:freq 3, :recur-period-remainder 1}
+            {:freq 2, :recur-period-remainder 0}])
+         [{:freq 2, :recur-period-remainder 0}
+          {:freq 3, :recur-period-remainder 1}])
+      "coprime divisors; nothing to do")
+  (is (= (c/rec-group-remove-redundant-high-divisors
+           [{:freq 6, :recur-period-remainder 1}
+            {:freq 12, :recur-period-remainder 7}
+            {:freq 24, :recur-period-remainder 21}])
+         [{:freq 6, :recur-period-remainder 1}
+          {:freq 24, :recur-period-remainder 21}])))
+
+(deftest rec-group-reduce-large-period
+  (is (= (c/rec-group-reduce-large-period [{:freq 2, :recur-period-remainder 0}
+                                           {:freq 2,
+                                            :recur-period-remainder 0}])
+         [{:freq 2, :recur-period-remainder 0}]))
+  (is (= (c/rec-group-reduce-large-period [{:freq 2, :recur-period-remainder 0}
+                                           {:freq 2,
+                                            :recur-period-remainder 1}])
+         [{:freq 1, :recur-period-remainder 0}]))
+  (is (= (c/rec-group-reduce-large-period [{:freq 4, :recur-period-remainder 0}
+                                           {:freq 4, :recur-period-remainder 1}
+                                           {:freq 4, :recur-period-remainder 2}
+                                           {:freq 4,
+                                            :recur-period-remainder 3}])
+         [{:freq 1, :recur-period-remainder 0}]))
+  (is (= (c/rec-group-reduce-large-period [{:freq 6, :recur-period-remainder 0}
+                                           {:freq 6, :recur-period-remainder 2}
+                                           {:freq 6,
+                                            :recur-period-remainder 4}])
+         [{:freq 2, :recur-period-remainder 0}]))
+  (is (= (c/rec-group-reduce-large-period [{:freq 6, :recur-period-remainder 0}
+                                           {:freq 6, :recur-period-remainder 1}
+                                           {:freq 6, :recur-period-remainder 2}
+                                           {:freq 6,
+                                            :recur-period-remainder 4}])
+         [{:freq 2, :recur-period-remainder 0}
+          {:freq 6, :recur-period-remainder 1}]))
+  (is (= (c/rec-group-reduce-large-period [{:freq 6, :recur-period-remainder 1}
+                                           {:freq 6, :recur-period-remainder 3}
+                                           {:freq 6,
+                                            :recur-period-remainder 5}])
+         [{:freq 2, :recur-period-remainder 1}]))
+  (is (= (c/rec-group-reduce-large-period [{:freq 6, :recur-period-remainder 0}
+                                           {:freq 6,
+                                            :recur-period-remainder 3}])
+         [{:freq 3, :recur-period-remainder 0}]))
+  (is (= (c/rec-group-reduce-large-period [{:freq 6, :recur-period-remainder 1}
+                                           {:freq 6,
+                                            :recur-period-remainder 4}])
+         [{:freq 3, :recur-period-remainder 1}]))
+  (is (= (c/rec-group-reduce-large-period [{:freq 6, :recur-period-remainder 2}
+                                           {:freq 6,
+                                            :recur-period-remainder 5}])
+         [{:freq 3, :recur-period-remainder 2}]))
+  (is (= (c/rec-group-reduce-large-period
+           [{:freq 24, :recur-period-remainder 1}
+            {:freq 24, :recur-period-remainder 13}
+            {:freq 24, :recur-period-remainder 5}
+            {:freq 24, :recur-period-remainder 11}
+            {:freq 24, :recur-period-remainder 17}
+            {:freq 24, :recur-period-remainder 23}])
+         [{:freq 6, :recur-period-remainder 5}
+          {:freq 12, :recur-period-remainder 1}]))
+  (is (= (c/rec-group-reduce-large-period
+           [{:freq 24, :recur-period-remainder 1}
+            {:freq 24, :recur-period-remainder 2}
+            {:freq 24, :recur-period-remainder 13}
+            {:freq 24, :recur-period-remainder 14}])
+         [{:freq 12, :recur-period-remainder 1}
+          {:freq 12, :recur-period-remainder 2}]))
+  (is (= (c/rec-group-reduce-large-period
+           [{:freq 24, :recur-period-remainder 1}
+            {:freq 24, :recur-period-remainder 3}
+            {:freq 24, :recur-period-remainder 7}
+            {:freq 24, :recur-period-remainder 13}
+            {:freq 24, :recur-period-remainder 15}
+            {:freq 24, :recur-period-remainder 19}
+            {:freq 24, :recur-period-remainder 21}])
+         [{:freq 6, :recur-period-remainder 1}
+          {:freq 12, :recur-period-remainder 3}
+          {:freq 24, :recur-period-remainder 21}]))
+  (is (= (c/rec-group-reduce-large-period [{:freq 2, :recur-period-remainder 0}
+                                           {:freq 3,
+                                            :recur-period-remainder 1}])
+         [{:freq 2, :recur-period-remainder 0}
+          {:freq 3, :recur-period-remainder 1}])
+      "different freq; nothing to do"))
+
+(deftest recombine-periods
+  (is (= (c/recombine-periods [{:recur-period-start 0, :recur-period-end 10}
+                               {:recur-period-start 10, :recur-period-end 20}
+                               {:recur-period-start 20, :recur-period-end 30}
+                               {:recur-period-start 40, :recur-period-end 60}
+                               {:recur-period-start 60, :recur-period-end nil}])
+         [{:recur-period-start 0, :recur-period-end 30}
+          {:recur-period-start 40, :recur-period-end nil}])))
+
+(deftest try-get-single-occ-from-rec
+  (is (= (c/try-get-single-occ-from-rec {:recur-type :day,
+                                         :freq 6,
+                                         :recur-period-remainder 5,
+                                         :recur-period-start 996,
+                                         :recur-period-end 1002})
+         1001))
+  (is (= (c/try-get-single-occ-from-rec {:recur-type :day,
+                                         :freq 6,
+                                         :recur-period-remainder 5,
+                                         :recur-period-start 996,
+                                         :recur-period-end nil})
+         nil))
+  (is (= (c/try-get-single-occ-from-rec {:recur-type :day,
+                                         :freq 6,
+                                         :recur-period-remainder 5,
+                                         :recur-period-start 996,
+                                         :recur-period-end 10000})
+         nil)))
+
+(deftest try-absorb-one
+  (is (= (c/try-absorb-one #{15}
+                           {:recur-period-start 0,
+                            :recur-period-end 13,
+                            :recur-period-remainder 0,
+                            :freq 3})
+         [#{}
+          {:recur-period-start 0,
+           :recur-period-end 18,
+           :recur-period-remainder 0,
+           :freq 3}])
+      "simple forwards")
+  (is (= (c/try-absorb-one #{16}
+                           {:recur-period-start 0,
+                            :recur-period-end 14,
+                            :recur-period-remainder 1,
+                            :freq 3})
+         [#{}
+          {:recur-period-start 0,
+           :recur-period-end 19,
+           :recur-period-remainder 1,
+           :freq 3}])
+      "non-zero remainder; forwards")
+  (is (= (c/try-absorb-one #{15 18 21 22}
+                           {:recur-period-start 0,
+                            :recur-period-end 13,
+                            :recur-period-remainder 0,
+                            :freq 3})
+         [#{22}
+          {:recur-period-start 0,
+           :recur-period-end 24,
+           :recur-period-remainder 0,
+           :freq 3}])
+      "multiple forwards")
+  (is (= (c/try-absorb-one #{6}
+                           {:recur-period-start 9,
+                            :recur-period-end 21,
+                            :recur-period-remainder 0,
+                            :freq 3})
+         [#{}
+          {:recur-period-start 6,
+           :recur-period-end 21,
+           :recur-period-remainder 0,
+           :freq 3}])
+      "simple backwards")
+  (is (= (c/try-absorb-one #{7}
+                           {:recur-period-start 10,
+                            :recur-period-end 22,
+                            :recur-period-remainder 1,
+                            :freq 3})
+         [#{}
+          {:recur-period-start 7,
+           :recur-period-end 22,
+           :recur-period-remainder 1,
+           :freq 3}])
+      "non-zero remainder; backwards")
+  (is (= (c/try-absorb-one #{1001}
+                           {:recur-period-start 1002,
+                            :recur-period-end nil,
+                            :recur-period-remainder 1,
+                            :freq 2})
+         [#{}
+          {:recur-period-start 1001,
+           :recur-period-end nil,
+           :recur-period-remainder 1,
+           :freq 2}])
+      "non-zero remainder; backwards")
+  (is (= (c/try-absorb-one #{7 4 2}
+                           {:recur-period-start 10,
+                            :recur-period-end 22,
+                            :recur-period-remainder 1,
+                            :freq 3})
+         [#{2}
+          {:recur-period-start 4,
+           :recur-period-end 22,
+           :recur-period-remainder 1,
+           :freq 3}])
+      "multiple backwards")
+  (is (= (c/try-absorb-one #{7 4 2 22 25 30}
+                           {:recur-period-start 10,
+                            :recur-period-end 22,
+                            :recur-period-remainder 1,
+                            :freq 3})
+         [#{2 30}
+          {:recur-period-start 4,
+           :recur-period-end 28,
+           :recur-period-remainder 1,
+           :freq 3}])
+      "multiple forwards and backwards"))
+
+(deftest try-absorb
+  (is (= (c/try-absorb #{1001}
+                       [{:freq 2,
+                         :recur-period-start 1003,
+                         :recur-period-end nil,
+                         :recur-period-remainder 1}])
+         [{:freq 2,
+           :recur-period-start 1001,
+           :recur-period-end nil,
+           :recur-period-remainder 1}]))
+  (is (= (c/try-absorb #{1000}
+                       [{:recur-type :day,
+                         :freq 2,
+                         :recur-period-start 1003,
+                         :recur-period-end nil,
+                         :recur-period-remainder 1}])
+         [{:recur-type :day,
+           :freq 2,
+           :recur-period-start 1003,
+           :recur-period-end nil,
+           :recur-period-remainder 1}
+          {:recur-type :day,
+           :freq 1,
+           :recur-period-start 1000,
+           :recur-period-end 1001,
+           :recur-period-remainder 0}])))
+
+(defn- day-rec
+  ([freq start]
+   (c/event-from-single-rec
+     "x"
+     {:recur-type :day, :freq freq, :recur-start (c/day-num-to-date start)}))
+  ([freq start end]
+   (c/event-from-single-rec "x"
+                            {:recur-type :day,
+                             :freq freq,
+                             :recur-start (c/day-num-to-date start),
+                             :recur-end (c/day-num-to-date end)})))
+
+(deftest optimize-event
+  (is (= (c/optimize-event (day-rec 2 1001)) (day-rec 2 1001)) "single rec")
+  (is (= (c/optimize-event (c/merge-event (day-rec 2 100) (day-rec 2 100)))
+         (day-rec 2 100))
+      "identical rec")
+  (is (= (c/optimize-event (c/merge-event (day-rec 1 100) (day-rec 1 200)))
+         (day-rec 1 100))
+      "same divisor (1), later start")
+  (is (= (c/optimize-event (c/merge-event (day-rec 2 100) (day-rec 2 102)))
+         (day-rec 2 100))
+      "same divisor (2), later start")
+  (is (= (c/optimize-event (c/merge-event (day-rec 1 100 500)
+                                          (day-rec 1 200 500)))
+         (day-rec 1 100 500))
+      "same divisor, later start with end")
+  (is (= (c/optimize-event (c/merge-event (day-rec 1 100 200)
+                                          (day-rec 1 200 300)))
+         (day-rec 1 100 300))
+      "divisor 1, perfect overlap")
+  (is (= (c/optimize-event (c/merge-event (day-rec 2 100 200)
+                                          (day-rec 2 200 300)))
+         (day-rec 2 100 300))
+      "divisor 2, perfect overlap")
+  (is (= (c/optimize-event (c/merge-event (day-rec 2 100 199)
+                                          (day-rec 2 200 299)))
+         (day-rec 2 100 300))
+      "divisor 2, perfect overlap with end adjustment")
+  (is (= (c/optimize-event (c/merge-event (day-rec 10 100 155)
+                                          (day-rec 10 160 299)))
+         (day-rec 10 100 300))
+      "more end adjustment")
+  (is (= (c/optimize-event (c/merge-event (day-rec 1 100) (day-rec 2 100)))
+         (day-rec 1 100))
+      "same start, different divisors")
+  (is (= (c/optimize-event (c/merge-event (day-rec 3 100) (day-rec 2 100)))
+         (c/merge-event (day-rec 2 100) (day-rec 3 100)))
+      "same start, different divisors, coprime")
+  (is (= (c/optimize-event (c/merge-event (day-rec 2 101) (day-rec 2 102)))
+         (day-rec 1 101))
+      "all remainders covered 1")
+  (is (= (c/optimize-event (c/merge-event (day-rec 2 102) (day-rec 2 103)))
+         (day-rec 1 102))
+      "all remainders covered 2")
+  (is (= (c/optimize-event (c/merge-event (day-rec 2 102) (day-rec 2 100)))
+         (day-rec 2 100))
+      "same divisor, later start, remainder 0")
+  (is (= (c/optimize-event (c/merge-event (day-rec 2 103) (day-rec 2 101)))
+         (day-rec 2 101))
+      "same divisor, later start, remainder 1")
+  (is (= (c/optimize-event (c/merge-event (day-rec 2 100) (day-rec 4 100)))
+         (day-rec 2 100))
+      "a divisor is a multiple of another")
+  (is
+    (= (c/optimize-event (c/merge-event (day-rec 2 101) (day-rec 4 103)))
+       (day-rec 2 101))
+    "a divisor is a multiple of another, remainder mod smaller divisor is the same as the other remainder")
+  (is (= (c/optimize-event (reduce c/merge-event
+                             [(day-rec 3 501) (day-rec 3 502) (day-rec 3 503)]))
+         (day-rec 1 501))
+      "divisor 3, all remainders covered")
+  (is (= (c/optimize-event (reduce c/merge-event
+                             [(day-rec 6 1001) (day-rec 6 1003)
+                              (day-rec 6 1005)]))
+         (day-rec 2 1001))
+      "divisor 6, mod 2 remainders covered")
+  (is (= (c/optimize-event (reduce c/merge-event
+                             [(day-rec 10 200 399) (day-rec 10 400 996)
+                              (day-rec 10 1000 1100)]))
+         (day-rec 10 200 1100))
+      "three segments")
+  (is (= (c/optimize-event (c/merge-event (day-rec 1 90 91) (day-rec 10 100)))
+         (day-rec 10 90))
+      "a single-occ rec can be combined with a rec with a different divisor")
+  (is (= (c/optimize-event (c/merge-event (day-rec 7 200 206) (day-rec 10 100)))
+         (day-rec 10 100))
+      "a single-occ rec is a subset of a rec with a different divisor")
+  (is
+    (= (c/optimize-event (c/merge-event (day-rec 7 200 206)
+                                        (day-rec 10 100 500)))
+       (day-rec 10 100 500))
+    "a single-occ rec is a subset of a rec with a different divisor; with end")
+  (is (= (c/optimize-event (c/merge-event (day-rec 7 200 206)
+                                          (day-rec 10 100 200)))
+         (day-rec 10 100 210))
+      "a single-occ rec is a just after a rec with a different divisor")
+  (is (= (c/optimize-event (reduce c/merge-event
+                             [(day-rec 10 100) (day-rec 1 90 91)
+                              (day-rec 5 80 83)]))
+         (day-rec 10 80))
+      "multiple single recs can be absorbed"))

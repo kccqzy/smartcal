@@ -483,6 +483,339 @@
           (map #(recurrent-event-occurrences % epoch from until)
             (:recur-pats event)))))
 
+(defn day-rec-to-period
+  [{:keys [freq recur-start recur-end], :as day-rec}]
+  (let [start-daynum (:daynum recur-start)
+        end-daynum (:daynum recur-end)
+        adjusted-start-daynum (- start-daynum (mod start-daynum freq))
+        adjusted-end-daynum (if (nil? end-daynum)
+                              nil
+                              (+ end-daynum
+                                 (mod (- start-daynum end-daynum) freq)))]
+    (-> day-rec
+        (dissoc :recur-start)
+        (dissoc :recur-end)
+        (assoc :recur-period-remainder (mod start-daynum freq))
+        (assoc :recur-period-start adjusted-start-daynum)
+        (assoc :recur-period-end adjusted-end-daynum))))
+
+(defn rec-period-has-occ
+  [{:keys [recur-period-start recur-period-end recur-period-remainder freq]}]
+  (or (nil? recur-period-end)
+      (not (empty? (modulo-remainder-seq freq
+                                         recur-period-remainder
+                                         recur-period-start
+                                         recur-period-end)))))
+
+(defn period-to-day-rec
+  [{:keys [recur-period-start recur-period-end recur-period-remainder freq],
+    :as day-rec}]
+  (let [start (day-num-to-date
+                (+ recur-period-start
+                   (mod (- recur-period-remainder recur-period-start) freq)))
+        result (-> day-rec
+                   (dissoc :recur-period-remainder)
+                   (dissoc :recur-period-start)
+                   (dissoc :recur-period-end)
+                   (assoc :recur-start start))]
+    (if (nil? recur-period-end)
+      result
+      (assoc result :recur-end (day-num-to-date recur-period-end)))))
+
+(defn split-recs-without-overlap
+  "Split a seq of recurrence patterns into new patterns without any overlapping
+  start and end."
+  [recs]
+  {:pre [(every? map? recs) (every? #(integer? (:recur-period-start %)) recs)
+         (every? #(or (nil? (:recur-period-end %))
+                      (integer? (:recur-period-end %)))
+                 recs)]}
+  (let [split-points (into (sorted-set)
+                           (mapcat (fn [{:keys [recur-period-start
+                                                recur-period-end]}]
+                                     (conj (if (nil? recur-period-end)
+                                             nil
+                                             (conj nil recur-period-end))
+                                           recur-period-start))
+                             recs))]
+    (mapcat (fn [{:keys [recur-period-start recur-period-end], :as rec}]
+              (let [relevant-points
+                      (if (nil? recur-period-end)
+                        (subseq split-points >= recur-period-start)
+                        (subseq split-points
+                                >=
+                                recur-period-start
+                                <=
+                                recur-period-end))
+                    intervals (if (nil? recur-period-end)
+                                (partition 2 1 nil relevant-points)
+                                (partition 2 1 relevant-points))]
+                (map (fn [[new-start new-end]]
+                       (-> rec
+                           (assoc :recur-period-start new-start)
+                           (assoc :recur-period-end new-end)))
+                  intervals)))
+      recs)))
+
+(defn rec-group-remove-redundant-high-divisors
+  "Optimize a group (where the period start and end are identical) using the rule
+  that given [x===r1(mod d1), x===r2(mod d2)], if d2 mod d1=0 and r2 mod d1=r1
+  then the latter can be eliminated. For example [x===1(mod 2), x===3(mod 4)]
+  can be simplified to [x===1(mod 2)]."
+  [grouped-recs]
+  ;; WARNING: QUADRATIC LOOP
+  (persistent!
+    (reduce (fn [grp {r2 :recur-period-remainder, d2 :freq, :as new}]
+              (if (some (fn [i]
+                          (let [{r1 :recur-period-remainder, d1 :freq}
+                                  (get grp i)]
+                            (and (== 0 (mod d2 d1)) (== r1 (mod r2 d1)))))
+                        (range (count grp)))
+                grp
+                (conj! grp new)))
+      (transient [])
+      (sort-by :freq grouped-recs))))
+
+(defn divisors
+  "Find all divisors for a positive integer."
+  [n]
+  {:pre [(integer? n) (> n 0)]}
+  (let [[asc desc] (reduce (fn [[asc desc :as acc] i]
+                             (if (== 0 (mod n i))
+                               (let [q (quot n i)]
+                                 (if (== i q)
+                                   [(conj! asc i) desc]
+                                   [(conj! asc i) (conj! desc q)]))
+                               acc))
+                     [(transient []) (transient [])]
+                     (range 1 (inc (Math/floor (Math/sqrt n)))))]
+    (concat (persistent! asc) (rseq (persistent! desc)))))
+
+(defn opt-divisor-remainders-set
+  "Given a divisor and a set of remainders, representing the union of sets
+  bigcup_i {x===r_i(mod d) | x}, optimize it into smaller divisors when possible."
+  [d rs]
+  {:pre [(integer? d) (> d 0) (set? rs) (every? integer? rs)
+         (every? #(>= % 0) rs) (every? #(< % d) rs)]}
+  (if (empty? rs)
+    []
+    (loop [rs (transient rs)
+           result (transient [])
+           divisors-to-check (divisors d)
+           r 0]
+      (assert (seq divisors-to-check))
+      (assert (> (count rs) 0))
+      (let [d2 (first divisors-to-check)
+            cnt (quot d d2)]
+        (if (< (count rs) cnt)
+          (recur rs result (rest divisors-to-check) 0)
+          (let [required-rs (range r d d2)]
+            (if (every? rs required-rs)
+              (let [new-result (conj! result [d2 r])
+                    new-rs (reduce disj! rs required-rs)]
+                (cond (empty? new-rs) (persistent! new-result)
+                      (or (== (inc r) d2) (< (count new-rs) cnt))
+                        (recur new-rs new-result (rest divisors-to-check) 0)
+                      :else
+                        (recur new-rs new-result divisors-to-check (inc r))))
+              (if (== (inc r) d2)
+                (recur rs result (rest divisors-to-check) 0)
+                (recur rs result divisors-to-check (inc r))))))))))
+
+(defn rec-group-reduce-large-period
+  "Optimize a group (where the period start and end are identical) using the rule
+  that given [x===r1(mod d), x===r2(mod d), ...] if there exists some d2 such
+  that d mod d2 = 0, and r1 mod d2 = r2 mod d2 = ... = r for every multiple of
+  d2 then it can be replaced with x===r(mod d2). For example [x===0(mod 4),
+  x===2(mod 4)] can be simplified to [x===0(mod 2)], and [x===0(mod 2),
+  x===1(mod 2)] can be simplified to [x===0(mod 1)]."
+  [grouped-recs]
+  (mapcat (fn [grp]
+            {:pre [(apply = (map :freq grp))]}
+            (let [distinct-rems (into (hash-set)
+                                      (map :recur-period-remainder grp))
+                  rec (first grp)
+                  d (:freq rec)
+                  result (opt-divisor-remainders-set d distinct-rems)]
+              (map (fn [[d2 r]]
+                     (-> rec
+                         (assoc :recur-period-remainder r)
+                         (assoc :freq d2)))
+                result)))
+    (partition-by :freq grouped-recs)))
+
+(defn recombine-periods
+  "Recombine different recurrence patterns. This function assumes that the caller
+  has grouped the recurrences by everything other than start and end, so only an
+  analysis on the start and end would be necessary."
+  [grouped-recs]
+  {:pre [(sequential? grouped-recs)
+         (every? #(integer? (:recur-period-start %)) grouped-recs)
+         (every? #(or (nil? (:recur-period-end %))
+                      (integer? (:recur-period-end %)))
+                 grouped-recs)]}
+  (loop [result (transient [])
+         recs grouped-recs]
+    (if (empty? recs)
+      (persistent! result)
+      (let [rec (first recs)
+            rest-recs (rest recs)]
+        (if (== 0 (count result))
+          (recur (conj! result rec) rest-recs)
+          (let [last-rec (nth result (dec (count result)))]
+            (assert (not (nil? (:recur-period-end last-rec)))
+                    "only the last rec may have no end")
+            (assert (<= (:recur-period-end last-rec) (:recur-period-start rec))
+                    "recs must not overlap")
+            (if (== (:recur-period-end last-rec) (:recur-period-start rec))
+              (let [new-start (:recur-period-start last-rec)
+                    new-rec (assoc rec :recur-period-start new-start)]
+                (recur (-> result
+                           (pop!)
+                           (conj! new-rec))
+                       rest-recs))
+              (recur (conj! result rec) rest-recs))))))))
+
+(defn try-get-single-occ-from-rec
+  "Try to extract the only occurrence from a recurrence if it has only one occurrence."
+  [rec]
+  (if-let [end (:recur-period-end rec)]
+    (let [occs (modulo-remainder-seq (:freq rec)
+                                     (:recur-period-remainder rec)
+                                     (:recur-period-start rec)
+                                     end)]
+      (if (nil? (next occs)) (first occs)))))
+
+(defn try-absorb-one-forwards
+  "Try to absorb one or more single occurrences by expanding the recurrence
+  forwards (i.e. moving the recur-period-end later)."
+  [single-occs {:keys [recur-period-end freq recur-period-remainder], :as rec}]
+  {:pre [(set? single-occs)]}
+  (loop [single-occs (transient single-occs)
+         next-occ (+ recur-period-end
+                     (mod (- recur-period-remainder recur-period-end) freq))
+         rec (transient rec)]
+    (if (contains? single-occs next-occ)
+      (recur (disj! single-occs next-occ)
+             (+ next-occ freq)
+             (assoc! rec :recur-period-end (+ next-occ freq)))
+      [(persistent! single-occs) (persistent! rec)])))
+
+(defn try-absorb-one-backwards
+  "Try to absorb one or more single occurrences by expanding the recurrence
+  backwards (i.e. moving the recur-period-start earlier)."
+  [single-occs
+   {:keys [recur-period-start freq recur-period-remainder], :as rec}]
+  {:pre [(set? single-occs)]}
+  (loop [single-occs (transient single-occs)
+         prev-occ (let [diff (mod (- recur-period-start recur-period-remainder)
+                                  freq)
+                        adjusted-diff (if (== 0 diff) freq diff)]
+                    (- recur-period-start adjusted-diff))
+         rec (transient rec)]
+    (if (contains? single-occs prev-occ)
+      (recur (disj! single-occs prev-occ)
+             (- prev-occ freq)
+             (assoc! rec :recur-period-start prev-occ))
+      [(persistent! single-occs) (persistent! rec)])))
+
+(defn try-absorb-one
+  [single-occs
+   {:keys [recur-period-start recur-period-end recur-period-remainder freq],
+    :as rec}]
+  (let [single-occs (into (hash-set)
+                          ;; Filter away occs that correspond to the
+                          ;; recurrence.
+                          (remove (fn [occ]
+                                    (and (>= occ recur-period-start)
+                                         (or (nil? recur-period-end)
+                                             (< occ recur-period-end))
+                                         (== (mod occ freq)
+                                             recur-period-remainder)))
+                            single-occs))
+        [s1 r1] (try-absorb-one-forwards single-occs rec)]
+    (try-absorb-one-backwards s1 r1)))
+
+(defn try-absorb
+  [single-occs multi-occ-recs]
+  {:pre [(seq multi-occ-recs)]}
+  (loop [single-occs single-occs
+         multi-occ-recs multi-occ-recs
+         rv (transient [])]
+    (if (or (empty? single-occs) (empty? multi-occ-recs))
+      (let [rv (reduce conj! rv multi-occ-recs)
+            a-rec (get rv 0)
+            rv (transduce (map (fn [occ]
+                                 (-> a-rec
+                                     (assoc :freq 1)
+                                     (assoc :recur-period-start occ)
+                                     (assoc :recur-period-end (inc occ))
+                                     (assoc :recur-period-remainder 0))))
+                          conj!
+                          rv
+                          single-occs)]
+        (persistent! rv))
+      (let [[new-single-occs new-rec] (try-absorb-one single-occs
+                                                      (first multi-occ-recs))]
+        (recur new-single-occs (rest multi-occ-recs) (conj! rv new-rec))))))
+
+(defn absorb-single-occs-from-recs
+  "Find single-occurrence recurrences and try to absorb them into other larger
+  recurrences."
+  [recs]
+  (loop [single-occs (transient [])
+         multi-occ-recs (transient [])
+         recs recs]
+    (if (empty? recs)
+      (try-absorb (persistent! single-occs) (persistent! multi-occ-recs))
+      (if-let [occ (try-get-single-occ-from-rec (first recs))]
+        (recur (conj! single-occs occ) multi-occ-recs (rest recs))
+        (recur single-occs (conj! multi-occ-recs (first recs)) (rest recs))))))
+
+(defn optimize-day-recs
+  [day-recs]
+  ;; This feels very ad-hoc to me: it's like a compiler's optimizer being
+  ;; from a manually composed set of passes.
+  (->> day-recs
+       (map day-rec-to-period)
+       (split-recs-without-overlap)
+       (filter rec-period-has-occ)
+       ;; We need sort-by and partition-by; if we just used group-by the
+       ;; period starts are still unsorted, violating preconditions for
+       ;; passes later in the pipeline.
+       (sort-by :recur-period-start)
+       (partition-by :recur-period-start)
+       (mapcat #(rec-group-reduce-large-period
+                  (rec-group-remove-redundant-high-divisors %)))
+       (group-by (juxt :freq :recur-period-remainder))
+       (vals)
+       (mapcat recombine-periods)
+       (absorb-single-occs-from-recs)
+       (map period-to-day-rec)))
+
+(defn optimize-week-recs [x] x) ;; TODO
+(defn optimize-month-recs [x] x) ;; TODO
+(defn optimize-year-recs [x] x) ;; TODO
+
+(defn optimize-event
+  "Optimize the recurrences of an event. The notion of optimality is not precisely
+  defined, but it corresponds to a subjective notion of ease of comprehension."
+  [{:keys [recur-pats], :as event}]
+  {:pre [(event? event)]}
+  ;; TODO include event single-occs for optimization
+  (let [grouped-recs (group-by :recur-type recur-pats)
+        opt-day (optimize-day-recs (:day grouped-recs))
+        opt-week (optimize-week-recs (:week grouped-recs))
+        opt-month (optimize-month-recs (:month grouped-recs))
+        opt-year (optimize-year-recs (:year grouped-recs))]
+    (assoc event
+      :recur-pats (into [] (concat opt-day opt-week opt-month opt-year)))))
+
+(defn merge-and-possibly-optimize-event
+  [existing new]
+  ;; TODO allow user to choose whether to optimize
+  (optimize-event (merge-event existing new)))
+
 (defn get-visible-events
   "Determine which events are visible in the current view, given the boundaries of
   the current view and all available events. Return a map with :date :event."
@@ -975,7 +1308,11 @@
     (if (and (empty? (:specific-occs event)) (empty? (:recur-pats event)))
       (show-message env
                     "The event will never occur, therefore it is not added.")
-      (kv/update-val env :events evname merge-event event))))
+      (kv/update-val env
+                     :events
+                     evname
+                     merge-and-possibly-optimize-event
+                     event))))
 
 ;; -------------------------
 ;; Control language
