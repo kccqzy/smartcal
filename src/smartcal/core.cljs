@@ -84,19 +84,17 @@
         ;; Since March is the first month, we don't have to think about
         ;; leap years here and February always has 29 days. If it is not
         ;; actually a leap year, the year calculation has taken care of it.
-        days-in-month [31 30 31 30 31 31 30 31 30 31 31 29]
-        [m remaining-days _]
-          (reduce (fn [[cur-month remaining finished :as st] days-in-cur-month]
-                    (if finished
-                      st
-                      (if (<= days-in-cur-month remaining)
-                        [(inc cur-month) (- remaining days-in-cur-month) false]
-                        [cur-month remaining true])))
-            [0 remaining-days false]
-            days-in-month)
+        days-in-month #js [31 30 31 30 31 31 30 31 30 31 31 29]
+        [m remaining-days] (loop [m 0
+                                  remaining-days remaining-days]
+                             (let [days-in-cur-month (aget days-in-month m)]
+                               (if (<= days-in-cur-month remaining-days)
+                                 (recur (inc m)
+                                        (- remaining-days days-in-cur-month))
+                                 #js [m remaining-days])))
         ;; Fix the month, since we previously assumed March is the first
         ;; month.
-        m (+ 2 m)
+        m (+ m 2)
         ;; Fix the year for the same reason.
         is-month-overlarge? (>= m 12)
         y (if is-month-overlarge? (inc y) y)
