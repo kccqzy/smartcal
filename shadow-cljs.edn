@@ -2,6 +2,7 @@
                       :output-dir "public/js"
                       :asset-path "/js"
                       :modules    {:app {:init-fn smartcal.core/init!}}
+                      :build-hooks [(shadow.cljs.build-report/hook)]
                       :compiler-options {:fn-invoke-direct true}
                       :dev        {:closure-defines {smartcal.core/VERBOSE true}}}
                 :test {:target :browser-test :test-dir "out/test"}}

@@ -75,4 +75,6 @@ the two (hard-coded) source files.
 
 ### Release Build
 
-To produce a release build, run `clojure -M:release`.
+To produce a release build, run `clojure -M:release`. This helpfully produces a
+report showing the final JS file size and the contributions from each CLJS
+source files.
