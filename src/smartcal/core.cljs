@@ -15,10 +15,13 @@
 (defrecord Date [y m d dow daynum])
 
 (defn adjust-month
+  "Adjust the year and month such that the month is within the correct range."
   [y m]
   (let [new-y (+ y (quot m 12)) new-m (mod m 12)] [new-y new-m]))
 
 (defn ymd-to-day-num
+  "Convert the year/month/day into a single number representing the days since
+  January 1, 1600."
   [y m d]
   (let [[y m] (adjust-month y m)
         ;; A cycle is 400 years
@@ -50,6 +53,7 @@
     (+ day-num-jan-1 day-num-in-year)))
 
 (defn day-num-to-date
+  "Convert the number of days since January 1, 1600 into year/month/day."
   [day-num]
   {:pre [(>= day-num 0)]}
   (let [days-in-4y (+ 1 (* 4 365))
@@ -232,6 +236,9 @@
     (into [] all-occurrences)))
 
 (defn all-nd-weekdays-of-month
+  "Find all days that are of the given ordinals of the given day of week in a
+  month. The ordinals may be non-negative (usual indexing) or negative (counting
+  from the back.)"
   [occurrences day-of-week m y]
   {:pre [(set? occurrences)]}
   (let [all-dows (weekdays-of-month day-of-week m y)
@@ -243,6 +250,8 @@
                   all-dows)))
 
 (defn select-dates-from-week-recur
+  "Given a weekly recurrence pattern and a seq of week numbers, return a seq of
+  dates for the selected days within the given weeks."
   [recur-pat weeknums]
   {:pre [(keyword-identical? :week (:recur-type recur-pat))]}
   (for [weeknum weeknums
@@ -250,6 +259,8 @@
     (week-num-day-to-date weeknum dow)))
 
 (defn select-dates-from-month-recur
+  "Given a monthly recurrence pattern and a seq of month numbers, return a seq of
+  dates for the selected days within the given months."
   [recur-pat monthnums]
   {:pre [(keyword-identical? :month (:recur-type recur-pat))]}
   (case (:day-selection recur-pat)
@@ -268,6 +279,8 @@
            dt)))
 
 (defn select-dates-from-year-recur
+  "Given a yearly recurrence pattern and a seq of years, return a seq of dates for
+  the selected days within the given years."
   [recur-pat years]
   {:pre [(keyword-identical? :year (:recur-type recur-pat))]}
   (case (:day-selection recur-pat)
@@ -284,6 +297,10 @@
         dt)))
 
 (defn recurrent-event-occurrences
+  "Given a recurrence pattern and a default start date if that start date is not
+  present inside the recurrence pattern, return a seq of dates for the selected
+  days within the query window."
+  ;; TODO: Remove the second argument of default-recur-start.
   [{:keys [recur-type], :as recur-pat} default-recur-start query-start
    query-end]
   (let [recur-start (get recur-pat :recur-start default-recur-start)
@@ -484,6 +501,9 @@
             (:recur-pats event)))))
 
 (defn day-rec-to-period
+  "Convert a day recurrence pattern into an abstract recurrence period."
+  ;; TODO: consider whether the abstract recurrence period should have been
+  ;; present since the very beginning.
   [{:keys [freq recur-start recur-end], :as day-rec}]
   (let [start-daynum (:daynum recur-start)
         end-daynum (:daynum recur-end)
@@ -500,6 +520,7 @@
         (assoc :recur-period-end adjusted-end-daynum))))
 
 (defn rec-period-has-occ
+  "Determine whether a recurrence has at least one occurrence."
   [{:keys [recur-period-start recur-period-end recur-period-remainder freq]}]
   (or (nil? recur-period-end)
       (not (empty? (modulo-remainder-seq freq
@@ -508,6 +529,8 @@
                                          recur-period-end)))))
 
 (defn period-to-day-rec
+  "Convert a day recurrence with abstract periods back into recur-start and
+  recur-end."
   [{:keys [recur-period-start recur-period-end recur-period-remainder freq],
     :as day-rec}]
   (let [start (day-num-to-date
@@ -720,12 +743,18 @@
       [(persistent! single-occs) (persistent! rec)])))
 
 (defn try-absorb-one
+  "Try to absorb one or more single occurrences by eliminating those that coincide
+  with the given recurrence, and also expanding the recurrence both backwards
+  and forwards."
   [single-occs
    {:keys [recur-period-start recur-period-end recur-period-remainder freq],
     :as rec}]
   (let [single-occs (into (hash-set)
                           ;; Filter away occs that correspond to the
                           ;; recurrence.
+                          ;; TODO: consider whether this linear-time
+                          ;; filtering should be rewritten so that the
+                          ;; overall algorithm is not quadratic.
                           (remove (fn [occ]
                                     (and (>= occ recur-period-start)
                                          (or (nil? recur-period-end)
@@ -737,6 +766,8 @@
     (try-absorb-one-backwards s1 r1)))
 
 (defn try-absorb
+  "Try to absorb one or more single occurrences into multiple recurrences. This
+  simply iterates over all recurrences."
   [single-occs multi-occ-recs]
   {:pre [(seq multi-occ-recs)]}
   (loop [single-occs single-occs
