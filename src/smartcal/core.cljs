@@ -642,27 +642,48 @@
                 (recur rs result (rest divisors-to-check) 0)
                 (recur rs result divisors-to-check (inc r))))))))))
 
+(defn rec-group-reduce-large-period-single-freq
+  "Optimize a group (where the period start, end, and freq are identical) using
+  the rule that given [x===r1(mod d), x===r2(mod d), ...] if there exists some
+  d2 such that d mod d2 = 0, and r1 mod d2 = r2 mod d2 = ... = r for every
+  multiple of d2 then it can be replaced with x===r(mod d2). For
+  example [x===0(mod 4), x===2(mod 4)] can be simplified to [x===0(mod 2)],
+  and [x===0(mod 2), x===1(mod 2)] can be simplified to [x===0(mod 1)]."
+  [recs]
+  {:pre [(apply = (map :freq recs))]}
+  (let [distinct-rems (into (hash-set) (map :recur-period-remainder recs))
+        rec (first recs)
+        d (:freq rec)
+        result (opt-divisor-remainders-set d distinct-rems)]
+    (map (fn [[d2 r]]
+           (-> rec
+               (assoc :recur-period-remainder r)
+               (assoc :freq d2)))
+      result)))
+
 (defn rec-group-reduce-large-period
-  "Optimize a group (where the period start and end are identical) using the rule
-  that given [x===r1(mod d), x===r2(mod d), ...] if there exists some d2 such
-  that d mod d2 = 0, and r1 mod d2 = r2 mod d2 = ... = r for every multiple of
-  d2 then it can be replaced with x===r(mod d2). For example [x===0(mod 4),
-  x===2(mod 4)] can be simplified to [x===0(mod 2)], and [x===0(mod 2),
-  x===1(mod 2)] can be simplified to [x===0(mod 1)]."
-  [grouped-recs]
-  (mapcat (fn [grp]
-            {:pre [(apply = (map :freq grp))]}
-            (let [distinct-rems (into (hash-set)
-                                      (map :recur-period-remainder grp))
-                  rec (first grp)
-                  d (:freq rec)
-                  result (opt-divisor-remainders-set d distinct-rems)]
-              (map (fn [[d2 r]]
-                     (-> rec
-                         (assoc :recur-period-remainder r)
-                         (assoc :freq d2)))
-                result)))
-    (partition-by :freq grouped-recs)))
+  "Same as rec-group-reduce-large-period-single-freq, except that it also handles
+  recs with different periods by starting from large periods."
+  [recs]
+  {:pre [(seq recs)]}
+  (let [freq-groups (group-by :freq recs)]
+    (if (== 1 (count freq-groups))
+      (rec-group-reduce-large-period-single-freq recs)
+      (loop [freq-groups (into (sorted-map) freq-groups)
+             current-group (first (first (rseq freq-groups)))]
+        (assert (sorted? freq-groups))
+        (let [current-vals (get freq-groups current-group)
+              updated-vals (rec-group-reduce-large-period-single-freq
+                             current-vals)
+              updated-vals-grouped (group-by :freq updated-vals)
+              new-freq-groups (merge-with into
+                                          (dissoc freq-groups current-group)
+                                          updated-vals-grouped)
+              next-group (first (first
+                                  (rsubseq new-freq-groups < current-group)))]
+          (if (nil? next-group)
+            (apply concat (vals new-freq-groups))
+            (recur new-freq-groups next-group)))))))
 
 (defn recombine-periods
   "Recombine different recurrence patterns. This function assumes that the caller

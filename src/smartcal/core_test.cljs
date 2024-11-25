@@ -1656,7 +1656,13 @@
                                             :recur-period-remainder 1}])
          [{:freq 2, :recur-period-remainder 0}
           {:freq 3, :recur-period-remainder 1}])
-      "different freq; nothing to do"))
+      "different freq; nothing to do")
+  (is (= (c/rec-group-reduce-large-period [{:freq 2, :recur-period-remainder 0}
+                                           {:freq 4, :recur-period-remainder 1}
+                                           {:freq 4,
+                                            :recur-period-remainder 3}])
+         [{:freq 1, :recur-period-remainder 0}])
+      "multi-step reduction"))
 
 (deftest recombine-periods
   (is (= (c/recombine-periods [{:recur-period-start 0, :recur-period-end 10}
@@ -1905,4 +1911,8 @@
                              [(day-rec 10 100) (day-rec 1 90 91)
                               (day-rec 5 80 83)]))
          (day-rec 10 80))
-      "multiple single recs can be absorbed"))
+      "multiple single recs can be absorbed")
+  (is (= (c/optimize-event (reduce c/merge-event
+                             [(day-rec 2 198) (day-rec 4 201) (day-rec 4 199)]))
+         (day-rec 1 198))
+      "requires multi-step reduction in rec-group-reduce-large-period"))
