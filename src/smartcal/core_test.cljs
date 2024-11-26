@@ -1892,6 +1892,11 @@
                               (day-rec 10 1000 1100)]))
          (day-rec 10 200 1100))
       "three segments")
+  (is (= (c/optimize-event (c/merge-event (day-rec 10 100 200)
+                                          (day-rec 10 125 245)))
+         (reduce c/merge-event
+           [(day-rec 10 100 120) (day-rec 5 120 200) (day-rec 10 205 245)]))
+      "two recs become 3 recs")
   (is (= (c/optimize-event (c/merge-event (day-rec 1 90 91) (day-rec 10 100)))
          (day-rec 10 90))
       "a single-occ rec can be combined with a rec with a different divisor")
