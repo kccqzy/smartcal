@@ -825,22 +825,39 @@
   [day-recs]
   ;; This feels very ad-hoc to me: it's like a compiler's optimizer being
   ;; from a manually composed set of passes.
-  (->> day-recs
-       (map day-rec-to-period)
-       (split-recs-without-overlap)
-       (filter rec-period-has-occ)
-       ;; We need sort-by and partition-by; if we just used group-by the
-       ;; period starts are still unsorted, violating preconditions for
-       ;; passes later in the pipeline.
-       (sort-by :recur-period-start)
-       (partition-by :recur-period-start)
-       (mapcat #(rec-group-reduce-large-period
-                  (rec-group-remove-redundant-high-divisors %)))
-       (group-by (juxt :freq :recur-period-remainder))
-       (vals)
-       (mapcat recombine-periods)
-       (absorb-single-occs-from-recs)
-       (map period-to-day-rec)))
+  (->>
+    day-recs
+    (map day-rec-to-period)
+    (split-recs-without-overlap)
+    (filter rec-period-has-occ)
+    ;; We need sort-by and partition-by; if we just used group-by the
+    ;; period starts are still unsorted, violating preconditions for
+    ;; passes later in the pipeline.
+    (sort-by :recur-period-start)
+    (partition-by :recur-period-start)
+    (mapcat #(rec-group-reduce-large-period
+               (rec-group-remove-redundant-high-divisors %)))
+    (group-by (juxt :freq :recur-period-remainder))
+    (vals)
+    (mapcat recombine-periods)
+    (absorb-single-occs-from-recs)
+    ;; The following three passes are repeats. Here is a concrete example
+    ;; of why. Consider the following four recs as an intermediate value:
+    ;;
+    ;;     freq | remainder | start | end
+    ;;     ==============================
+    ;;        3 |         2 |    96 |  99
+    ;;        3 |         1 |    99 | 102
+    ;;        3 |         2 |    99 | 102
+    ;;        1 |         0 |   102 | nil
+    ;;
+    ;; But the recombine-periods pass combines the first and the third. So
+    ;; we run the following functions again.
+    (split-recs-without-overlap)
+    (filter rec-period-has-occ)
+    (absorb-single-occs-from-recs)
+    ;; TODO Do we need another recombine?
+    (map period-to-day-rec)))
 
 (defn optimize-week-recs [x] x) ;; TODO
 (defn optimize-month-recs [x] x) ;; TODO

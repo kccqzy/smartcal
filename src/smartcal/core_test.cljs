@@ -1915,4 +1915,11 @@
   (is (= (c/optimize-event (reduce c/merge-event
                              [(day-rec 2 198) (day-rec 4 201) (day-rec 4 199)]))
          (day-rec 1 198))
-      "requires multi-step reduction in rec-group-reduce-large-period"))
+      "requires multi-step reduction in rec-group-reduce-large-period")
+  (is (= (c/optimize-event (reduce c/merge-event
+                             [(day-rec 3 100) (day-rec 3 102) (day-rec 3 98)]))
+         (c/merge-event (day-rec 1 100) (day-rec 1 98 99))))
+  (is (= (c/optimize-event (reduce c/merge-event
+                             [(day-rec 3 98 99) (day-rec 3 100 101)
+                              (day-rec 3 101 102) (day-rec 1 102)]))
+         (c/merge-event (day-rec 1 100) (day-rec 1 98 99)))))
