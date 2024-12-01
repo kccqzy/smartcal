@@ -996,13 +996,17 @@
   (is (= (c/eval-str-exprs ["x" "y" "z"] ["Gray"]) #{})))
 
 (deftest remove-subsequence
-  (is (= (c/remove-subsequence "" ">>> ") ""))
-  (is (= (c/remove-subsequence ">>> " ">>> ") ""))
-  (is (= (c/remove-subsequence ">>> a" ">>> ") "a"))
-  (is (= (c/remove-subsequence "a>>> " ">>> ") "a"))
-  (is (= (c/remove-subsequence ">p>> " ">>> ") "p"))
-  (is (= (c/remove-subsequence "a>b>>c " ">>> ") "abc"))
-  (is (= (c/remove-subsequence "ab>>c " ">>> ") "abc ")))
+  (is (= (c/remove-subsequence "" c/cmdline-prompt) ""))
+  (is (= (c/remove-subsequence ">" c/cmdline-prompt) ""))
+  (is (= (c/remove-subsequence "a>" c/cmdline-prompt) "a"))
+  (is (= (c/remove-subsequence ">a" c/cmdline-prompt) "a"))
+  (is (= (c/remove-subsequence ">>> " c/cmdline-prompt) ""))
+  (is (= (c/remove-subsequence ">>> a" c/cmdline-prompt) "a"))
+  (is (= (c/remove-subsequence "a>>> " c/cmdline-prompt) "a"))
+  (is (= (c/remove-subsequence "ab>>> " c/cmdline-prompt) "ab"))
+  (is (= (c/remove-subsequence ">p>> " c/cmdline-prompt) "p"))
+  (is (= (c/remove-subsequence "a>b>>c " c/cmdline-prompt) "abc"))
+  (is (= (c/remove-subsequence "ab>>c " c/cmdline-prompt) "abc ")))
 
 (deftest history-add
   (is (= (c/history-add c/history-initial-state "abcd")

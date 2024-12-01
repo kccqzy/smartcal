@@ -1609,17 +1609,23 @@
 
 (defn remove-subsequence
   [val needle]
-  (let [[processed remaining]
-          (reduce (fn [[before-str after-str :as st] ch]
-                    (let [index (.indexOf after-str ch)]
-                      (if (== index -1)
-                        [(str before-str after-str) ""]
-                        (let [this-before (.substring after-str 0 index)
-                              this-after (.substring after-str (inc index))]
-                          [(str before-str this-before) this-after]))))
-            ["" val]
-            (seq needle))]
-    (str processed remaining)))
+  (apply str
+    (persistent! (loop [fragments (transient [val])
+                        i 0]
+                   (if (< i (.-length needle))
+                     (let [this (get fragments i)
+                           ch (.charAt needle i)
+                           index (.indexOf this ch)]
+                       (if (== index -1)
+                         fragments
+                         (let [this-before (.substr this 0 index)
+                               this-after (.substr this (inc index))
+                               new-fragments (-> fragments
+                                                 (pop!)
+                                                 (conj! this-before)
+                                                 (conj! this-after))]
+                           (recur new-fragments (inc i)))))
+                     fragments)))))
 
 (defc cmdline-display-component
   [[production-kw & remaining]]
