@@ -878,9 +878,9 @@
       :recur-pats (into [] (concat opt-day opt-week opt-month opt-year)))))
 
 (defn merge-and-possibly-optimize-event
-  [existing new]
-  ;; TODO allow user to choose whether to optimize
-  (optimize-event (merge-event existing new)))
+  [existing new opt]
+  (let [merged (merge-event existing new)]
+    (if opt (optimize-event merged) merged)))
 
 (defn get-visible-events
   "Determine which events are visible in the current view, given the boundaries of
@@ -1250,6 +1250,9 @@
                    (merge history-initial-state
                           {:weeks-to-show 15,
                            :start-date (today),
+                           :optimize-events true,
+                           :autocomplete true,
+                           :explain-cmd true,
                            :cmdline-input "",
                            :cmdline-output
                              "Welcome to smartcal. Type \"help\" for help.",
@@ -1281,9 +1284,12 @@
                      (<= (:d %) 31))})
 
 (sg/reg-event :app
-              :modify-weeks-to-show
-              (fn [env {:keys [weeks-to-show]}]
-                (assoc-in env [:ui :weeks-to-show] weeks-to-show)))
+              :modify-ui-prefs
+              (fn [env {:keys [key value]}]
+                {:pre [(keyword? key)]}
+                (when VERBOSE
+                  (js/console.log "Changing setting" (name key) "to" value))
+                (assoc-in env [:ui key] value)))
 
 (defn save-state
   [app-state]
@@ -1358,11 +1364,16 @@
                    (into {} (map #(vector (:evname %) %) (us-bank-holidays)))))
 
 (defn add-event-to-env
-  [env {:keys [evname], :as event}]
+  [env event]
   {:pre [(event? event)]}
   (if (and (empty? (:specific-occs event)) (empty? (:recur-pats event)))
     (show-message env "The event will never occur, therefore it is not added.")
-    (kv/update-val env :events evname merge-and-possibly-optimize-event event)))
+    (kv/update-val env
+                   :events
+                   (:evname event)
+                   merge-and-possibly-optimize-event
+                   event
+                   (get-in env [:ui :optimize-events]))))
 
 ;; -------------------------
 ;; Control language
@@ -1787,18 +1798,64 @@
 (defc config-modal-component
   []
   (bind weeks-to-show (sg/kv-lookup :ui :weeks-to-show))
-  (render (<< [:div#control [:p "Weeks to display: "]
-               [:input
-                {:type "range",
-                 :value weeks-to-show,
-                 :min 1,
-                 :max 60,
-                 :on-change :modify-weeks-to-show}] [:p weeks-to-show]]))
+  (bind should-autocomplete (sg/kv-lookup :ui :autocomplete))
+  (bind should-opt (sg/kv-lookup :ui :optimize-events))
+  (bind should-explain (sg/kv-lookup :ui :explain-cmd))
+  (render
+    (<<
+      [:div.slider-control
+       [:label {:for "weeks-to-display"} "Weeks to display: "]
+       [:input
+        {:type "range",
+         :id "weeks-to-display",
+         :value weeks-to-show,
+         :min 1,
+         :max 60,
+         :on-change :modify-weeks-to-show}] [:p weeks-to-show]]
+      [:div.checkbox-control
+       [:input#opt
+        {:type "checkbox", :checked should-opt, :on-click :modify-optimization}]
+       [:label {:for "opt"} "Optimize events (experimental)"]
+       [:p.expl
+        "Attempt to optimize recurrence rules to make them easier to understand when adding or modifying events. For example, if an event has a rule to repeat every 2 days, and another rule to repeat every 2 days starting from the following day, these two rules will be combined to be repeating every day."]]
+      [:div.checkbox-control
+       [:input#autocom
+        {:type "checkbox",
+         :checked should-autocomplete,
+         :on-click :modify-autocomplete}]
+       [:label {:for "autocom"} "Show auto-complete suggestions"]
+       [:p.expl
+        "Show suggested completions based on history and syntax (use the right arrow key to accept the suggestion)."]]
+      [:div.checkbox-control
+       [:input#explain
+        {:type "checkbox", :checked should-explain, :on-click :modify-explain}]
+       [:label {:for "explain"} "Show explanation of commands if well-formed"]
+       [:p.expl
+        "Explain the effect of a command when the command can be parsed correctly."]]))
   (event :modify-weeks-to-show
          [env _ e]
-         (let [new-value (js/parseInt (.. e -target -value) 10)]
-           (sg/run-tx env
-                      {:e :modify-weeks-to-show, :weeks-to-show new-value}))))
+         (sg/run-tx env
+                    {:e :modify-ui-prefs,
+                     :key :weeks-to-show,
+                     :value (js/parseInt (.. e -target -value) 10)}))
+  (event :modify-autocomplete
+         [env _ e]
+         (sg/run-tx env
+                    {:e :modify-ui-prefs,
+                     :key :autocomplete,
+                     :value (.. e -target -checked)}))
+  (event :modify-optimization
+         [env _ e]
+         (sg/run-tx env
+                    {:e :modify-ui-prefs,
+                     :key :optimize-events,
+                     :value (.. e -target -checked)}))
+  (event :modify-explain
+         [env _ e]
+         (sg/run-tx env
+                    {:e :modify-ui-prefs,
+                     :key :explain-cmd,
+                     :value (.. e -target -checked)})))
 
 (defn execute-input-impl
   [env input]
@@ -1884,12 +1941,14 @@
 (defc cmdline-component
   [start until]
   (bind input (sg/kv-lookup :ui :cmdline-input))
+  (bind ^boolean should-autocomplete (sg/kv-lookup :ui :autocomplete))
+  (bind ^boolean should-explain (sg/kv-lookup :ui :explain-cmd))
   (bind parsed (cmdline-parser input :total true :unhide :all))
-  (bind did-fail (insta/failure? parsed))
   (bind possible-completion
-        (if did-fail
-          (or (sg/query #(history-search-current-completion (:ui %)))
-              (find-parser-based-completion parsed))))
+        (if should-autocomplete
+          (if (insta/failure? parsed)
+            (or (sg/query #(history-search-current-completion (:ui %)))
+                (find-parser-based-completion parsed)))))
   (render
     (<<
       [:div#cmdline
@@ -1908,18 +1967,20 @@
          :on-keyup {:e :textarea-select}}]
        [:pre#cmdline-disp.cmdline
         {:aria-hidden "true",
-         :class (if (empty? input) "" (if did-fail "failed" "succeeded"))}
+         :class (if (identical? "" input)
+                  ""
+                  (if (insta/failure? parsed) "failed" "succeeded"))}
         [:code cmdline-prompt
          (if (seq parsed) (cmdline-display-component parsed))
-         (if-not (empty? input)
+         (if-not (identical? "" input)
            (<< [:span.comment
-                (if did-fail
-                  ;; Try to search for an auto-completion.
-                  (if possible-completion
-                    (.substring possible-completion (.-length input))
-                    " # Parse Error")
-                  (<< " # "
-                      (explain-input-component input start until)))]))]]]))
+                (if (insta/failure? parsed)
+                  (if (nil? possible-completion)
+                    (if should-explain " # Parse Error")
+                    (.substring possible-completion (.-length input)))
+                  (if should-explain
+                    (<< " # "
+                        (explain-input-component input start until))))]))]]]))
   (event :textarea-change
          [env _ e]
          ;; We do not support tab characters for now. The

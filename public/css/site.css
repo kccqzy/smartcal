@@ -46,18 +46,40 @@ div#modal.hidden {
     top: calc(-85vh - 2rem);
 }
 
-div#control {
+div.slider-control {
     width: 100%;
     display: flex;
     align-items: center;
+    column-gap: 0.5rem;
 }
 
-div#control > p {
+div.slider-control > label {
+    display: block;
     text-wrap: nowrap;
 }
 
-div#control > input {
+div.slider-control > input {
     flex-grow: 1;
+}
+
+div.checkbox-control {
+    width: 100%;
+    display: grid;
+    grid-template-columns: min-content 1fr;
+    column-gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+div.checkbox-control > input {
+    margin: 0;
+    padding: 0;
+}
+
+div.checkbox-control > p.expl {
+    grid-column-start: 2;
+    font-size: 0.8rem;
+    margin: 0.2rem 0 0 0;
 }
 
 div#table {
