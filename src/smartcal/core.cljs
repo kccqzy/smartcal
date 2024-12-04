@@ -269,7 +269,7 @@
              :let [date (month-num-day-to-date monthnum d)]
              ;; Need to filter away non-existent dates such as Feb 31
              ;; instead of wrapping.
-             :when (= (:d date) d)]
+             :when (== (:d date) d)]
          date)
     :dow (for [monthnum monthnums
                dt (all-nd-weekdays-of-month (:occ recur-pat)
@@ -288,7 +288,7 @@
               :let [date (ymd-to-date y (:m recur-pat) (:d recur-pat))]
               ;; Need to filter away non-existent dates such as Feb 31
               ;; instead of wrapping.
-              :when (= (:d date) (:d recur-pat))]
+              :when (== (:d date) (:d recur-pat))]
           date)
     :occ-dow-month
       (for [y years
@@ -920,9 +920,9 @@
 (defn day-to-ordinal
   [n]
   (str n
-       (cond (and (not= n 11) (= (mod n 10) 1)) "st"
-             (and (not= n 12) (= (mod n 10) 2)) "nd"
-             (and (not= n 13) (= (mod n 10) 3)) "rd"
+       (cond (and (not (== n 11)) (== (mod n 10) 1)) "st"
+             (and (not (== n 12)) (== (mod n 10) 2)) "nd"
+             (and (not (== n 13)) (== (mod n 10) 3)) "rd"
              :else "th")))
 
 (defn format-freq
@@ -930,7 +930,7 @@
   [recur-pat]
   (let [n (name (:recur-type recur-pat))]
     (str "every "
-         (if (= 1 (:freq recur-pat)) n (str (:freq recur-pat) " " n "s")))))
+         (if (== 1 (:freq recur-pat)) n (str (:freq recur-pat) " " n "s")))))
 
 (defn format-occ
   [recur-pat]
@@ -952,7 +952,7 @@
                 (str " until " (format-date-en-us until)))
         pat (case (:recur-type recur-pat)
               :day (format-freq recur-pat)
-              :week (str "every " (if (= 1 (:freq recur-pat))
+              :week (str "every " (if (== 1 (:freq recur-pat))
                                     "week"
                                     (str (:freq recur-pat) " weeks"))
                          " on " (cstr/join ", "
@@ -989,7 +989,7 @@
     (let [visible-occurrences-etc
             (take 4 (recurrent-event-occurrences recur-pat start until))
           displayed-occurrences (take 3 visible-occurrences-etc)
-          ellipsis (= 4 (count visible-occurrences-etc))]
+          ellipsis (== 4 (count visible-occurrences-etc))]
       (if (seq displayed-occurrences)
         (str " (occurring "
              (cstr/join "; " (map format-date-en-us displayed-occurrences))
@@ -1088,7 +1088,7 @@
   (-> ui-state
       (update :hist-entries
               (fn [v]
-                (if (= (peek v) entry)
+                (if (identical? (peek v) entry)
                   v
                   (let [new (conj v entry)
                         new-count (count new)]
@@ -1574,8 +1574,8 @@
                      (case (:tag %)
                        :string (if (.startsWith e failed-text)
                                  (.substring e (.-length failed-text)))
-                       :regexp (if (and (== (.-length failed-text) 0)
-                                        (= "/^ +/" (.toString e))
+                       :regexp (if (and (identical? "" failed-text)
+                                        (identical? "/^ +/" (.toString e))
                                         (not (.endsWith text " ")))
                                  " ")
                        nil))
@@ -1596,9 +1596,9 @@
        [:p.day
         (if show-complete
           (format-date-en-us ymd)
-          (str (if (= 1 d) (str (get month-names m) " "))
+          (str (if (== 1 d) (str (get month-names m) " "))
                d
-               (if (and (= 1 d) (= 0 m)) (str ", " y))))]
+               (if (and (== 1 d) (== 0 m)) (str ", " y))))]
        [:ul.events
         (sg/keyed-seq events-sorted
                       :evname
@@ -2040,7 +2040,8 @@
          env)
   (event :textarea-keydown
          [env _ e]
-         (when-not (or (.-isComposing e) (== 229 (.-keyCode e)))
+         (when-not (let [^boolean composing (.-isComposing e)]
+                     (or composing (== 229 (.-keyCode e))))
            (case (.-code e)
              "ArrowUp" (do (.preventDefault e)
                            (.stopPropagation e)
@@ -2096,15 +2097,13 @@
                [:div#table {:on-click {:e :hide-modal}} [:div.td.th "Sun"]
                 [:div.td.th "Mon"] [:div.td.th "Tue"] [:div.td.th "Wed"]
                 [:div.td.th "Thu"] [:div.td.th "Fri"] [:div.td.th "Sat"]
-                (sg/keyed-seq (mapv day-num-to-date
-                                (range (:daynum start)
-                                       (+ (:daynum start) (* 7 weeks-to-show))))
-                              :daynum
-                              (fn [date]
-                                (day-component date
-                                               (= (:daynum start)
-                                                  (:daynum date))
-                                               (get days-with-events date))))]
+                (sg/keyed-seq
+                  (mapv day-num-to-date (range (:daynum start) (:daynum until)))
+                  :daynum
+                  (fn [date]
+                    (day-component date
+                                   (== (:daynum start) (:daynum date))
+                                   (get days-with-events date))))]
                [:div#cmdline-inout (cmdline-output-component)
                 (cmdline-component start until)]])))
 
