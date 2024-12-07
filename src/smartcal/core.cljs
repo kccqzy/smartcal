@@ -795,6 +795,7 @@
       (let [rv (reduce conj! rv multi-occ-recs)
             a-rec (get rv 0)
             rv (transduce (map (fn [occ]
+                                 {:pre [(map? a-rec)]}
                                  (-> a-rec
                                      (assoc :freq 1)
                                      (assoc :recur-period-start occ)
@@ -811,12 +812,16 @@
 (defn absorb-single-occs-from-recs
   "Find single-occurrence recurrences and try to absorb them into other larger
   recurrences."
-  [recs]
+  [original-recs]
   (loop [single-occs (transient [])
          multi-occ-recs (transient [])
-         recs recs]
+         recs original-recs]
     (if (empty? recs)
-      (try-absorb (persistent! single-occs) (persistent! multi-occ-recs))
+      (if (== 0 (count multi-occ-recs))
+        ;; When there are no multi-occ recurrences, we don't know how to
+        ;; absorb them so we give up. TODO: find a way.
+        original-recs
+        (try-absorb (persistent! single-occs) (persistent! multi-occ-recs)))
       (if-let [occ (try-get-single-occ-from-rec (first recs))]
         (recur (conj! single-occs occ) multi-occ-recs (rest recs))
         (recur single-occs (conj! multi-occ-recs (first recs)) (rest recs))))))

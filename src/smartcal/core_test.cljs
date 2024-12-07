@@ -1827,6 +1827,10 @@
                              :recur-end (c/day-num-to-date end)})))
 
 (deftest optimize-event
+  (is (= (c/optimize-event (c/event-from-single-occ "x"
+                                                    (c/ymd-to-date 2024 1 1)))
+         (c/event-from-single-occ "x" (c/ymd-to-date 2024 1 1)))
+      "no rec")
   (is (= (c/optimize-event (day-rec 2 1001)) (day-rec 2 1001)) "single rec")
   (is (= (c/optimize-event (c/merge-event (day-rec 2 100) (day-rec 2 100)))
          (day-rec 2 100))
