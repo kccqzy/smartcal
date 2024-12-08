@@ -1513,6 +1513,162 @@
   (is (= (parse-and-find-completion "add \"x\" every 3 years on Ja")
          "add \"x\" every 3 years on Jan")))
 
+(deftest day-rec-to-period
+  (is (= (c/day-rec-to-period {:freq 1, :recur-start (c/day-num-to-date 100)})
+         {:freq 1,
+          :recur-period-remainder 0,
+          :recur-period-start 100,
+          :recur-period-end nil}))
+  (is (= (c/day-rec-to-period {:freq 2, :recur-start (c/day-num-to-date 101)})
+         {:freq 2,
+          :recur-period-remainder 1,
+          :recur-period-start 100,
+          :recur-period-end nil}))
+  (is (= (c/day-rec-to-period {:freq 2,
+                               :recur-start (c/day-num-to-date 101),
+                               :recur-end (c/day-num-to-date 109)})
+         {:freq 2,
+          :recur-period-remainder 1,
+          :recur-period-start 100,
+          :recur-period-end 109}))
+  (is (= (c/day-rec-to-period {:freq 2,
+                               :recur-start (c/day-num-to-date 101),
+                               :recur-end (c/day-num-to-date 110)})
+         {:freq 2,
+          :recur-period-remainder 1,
+          :recur-period-start 100,
+          :recur-period-end 111}))
+  (is (= (c/day-rec-to-period {:freq 2,
+                               :recur-start (c/day-num-to-date 100),
+                               :recur-end (c/day-num-to-date 110)})
+         {:freq 2,
+          :recur-period-remainder 0,
+          :recur-period-start 100,
+          :recur-period-end 110})))
+
+(deftest week-rec-to-periods
+  (is (= (c/week-rec-to-periods
+           {:freq 1, :dow #{1}, :recur-start (c/ymd-to-date 2024 11 8)})
+         [{:freq 1,
+           :dow #{1},
+           :recur-period-remainder 0,
+           :recur-period-start (c/week-num (c/ymd-to-date 2024 11 8)),
+           :recur-period-end nil}])
+      "no partial weeks")
+  (is (= (c/week-rec-to-periods {:freq 1,
+                                 :dow #{1},
+                                 :recur-start (c/ymd-to-date 2024 11 8),
+                                 :recur-end (c/ymd-to-date 2024 11 29)})
+         [{:freq 1,
+           :dow #{1},
+           :recur-period-remainder 0,
+           :recur-period-start (c/week-num (c/ymd-to-date 2024 11 8)),
+           :recur-period-end (c/week-num (c/ymd-to-date 2024 11 29))}])
+      "no partial weeks with end")
+  (is (= (c/week-rec-to-periods
+           {:freq 1, :dow #{1 6}, :recur-start (c/ymd-to-date 2024 11 7)})
+         [{:freq 1,
+           :dow #{6},
+           :recur-period-remainder 0,
+           :recur-period-start (dec (c/week-num (c/ymd-to-date 2024 11 8))),
+           :recur-period-end (c/week-num (c/ymd-to-date 2024 11 8))}
+          {:freq 1,
+           :dow #{1 6},
+           :recur-period-remainder 0,
+           :recur-period-start (c/week-num (c/ymd-to-date 2024 11 8)),
+           :recur-period-end nil}])
+      "one partial week at the front")
+  (is (= (c/week-rec-to-periods
+           {:freq 1, :dow #{1 5}, :recur-start (c/ymd-to-date 2024 11 14)})
+         [{:freq 1,
+           :dow #{1 5},
+           :recur-period-remainder 0,
+           :recur-period-start (inc (c/week-num (c/ymd-to-date 2024 11 14))),
+           :recur-period-end nil}])
+      "no partial week at the front because no occ")
+  (is (= (c/week-rec-to-periods {:freq 1,
+                                 :dow #{1 6},
+                                 :recur-start (c/ymd-to-date 2024 11 8),
+                                 :recur-end (c/ymd-to-date 2024 11 31)})
+         [{:freq 1,
+           :dow #{1 6},
+           :recur-period-remainder 0,
+           :recur-period-start (c/week-num (c/ymd-to-date 2024 11 8)),
+           :recur-period-end (c/week-num (c/ymd-to-date 2024 11 31))}
+          {:freq 1,
+           :dow #{1},
+           :recur-period-remainder 0,
+           :recur-period-start (c/week-num (c/ymd-to-date 2024 11 31)),
+           :recur-period-end (inc (c/week-num (c/ymd-to-date 2024 11 31)))}])
+      "one partial week at the end")
+  (is (= (c/week-rec-to-periods {:freq 1,
+                                 :dow #{1 0},
+                                 :recur-start (c/ymd-to-date 2024 11 8),
+                                 :recur-end (c/ymd-to-date 2024 11 29)})
+         [{:freq 1,
+           :dow #{1 0},
+           :recur-period-remainder 0,
+           :recur-period-start (c/week-num (c/ymd-to-date 2024 11 8)),
+           :recur-period-end (c/week-num (c/ymd-to-date 2024 11 29))}])
+      "no partial week at the end because no occ")
+  (is (= (c/week-rec-to-periods
+           {:freq 2, :dow #{1}, :recur-start (c/ymd-to-date 2024 11 1)})
+         [{:freq 2,
+           :dow #{1},
+           :recur-period-remainder 0,
+           :recur-period-start 22172,
+           :recur-period-end nil}])
+      "period 2; zero remainder; no partial weeks")
+  (is (= (c/week-rec-to-periods
+           {:freq 2, :dow #{1}, :recur-start (c/ymd-to-date 2024 11 8)})
+         [{:freq 2,
+           :dow #{1},
+           :recur-period-remainder 1,
+           :recur-period-start 22172,
+           :recur-period-end nil}])
+      "period 2; non-zero remainder; no partial weeks")
+  (is (= (c/week-rec-to-periods
+           {:freq 2, :dow #{1}, :recur-start (c/ymd-to-date 2024 11 10)})
+         [{:freq 2,
+           :dow #{1},
+           :recur-period-remainder 1,
+           :recur-period-start 22174,
+           :recur-period-end nil}])
+      "period 2; non-zero remainder; partial week has no occ")
+  (is (= (c/week-rec-to-periods
+           {:freq 2, :dow #{1 5}, :recur-start (c/ymd-to-date 2024 11 10)})
+         [{:freq 1,
+           :dow #{5},
+           :recur-period-remainder 0,
+           :recur-period-start 22173,
+           :recur-period-end 22174}
+          {:freq 2,
+           :dow #{1 5},
+           :recur-period-remainder 1,
+           :recur-period-start 22174,
+           :recur-period-end nil}])
+      "period 2; non-zero remainder; partial week at the front")
+  (is (= (c/week-rec-to-periods {:freq 2,
+                                 :dow #{1 5},
+                                 :recur-start (c/ymd-to-date 2024 11 10),
+                                 :recur-end (c/ymd-to-date 2025 0 22)})
+         [{:freq 1,
+           :dow #{5},
+           :recur-period-remainder 0,
+           :recur-period-start 22173,
+           :recur-period-end 22174}
+          {:freq 2,
+           :dow #{1 5},
+           :recur-period-remainder 1,
+           :recur-period-start 22174,
+           :recur-period-end 22179}
+          {:freq 1,
+           :dow #{1},
+           :recur-period-remainder 0,
+           :recur-period-start 22179,
+           :recur-period-end 22180}])
+      "period 2; non-zero remainder; partial week at the front and back"))
+
 (deftest split-recs-without-overlap
   (is (= (c/split-recs-without-overlap
            [{:recur-period-start 200, :recur-period-end 300, :id 0}])

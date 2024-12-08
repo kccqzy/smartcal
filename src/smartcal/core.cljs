@@ -497,6 +497,20 @@
           (map #(recurrent-event-occurrences % from until)
             (:recur-pats event)))))
 
+(defn adjust-start-end-with-freq
+  "Adjust the start and end of abstract periods to make later operations nicer.
+
+  The start value is adjusted to be a multiple of the period.
+
+  The end is the greatest value such that it does not include any new values
+  into the arithmetic progression.
+
+  TODO: explain the motivation of this adjustment."
+  [start end freq]
+  {:pre [(integer? start) (integer? freq) (or (nil? end) (integer? end))]}
+  [(- start (mod start freq))
+   (if (nil? end) nil (+ end (mod (- start end) freq)))])
+
 (defn day-rec-to-period
   "Convert a day recurrence pattern into an abstract recurrence period."
   ;; TODO: consider whether the abstract recurrence period should have been
@@ -504,17 +518,63 @@
   [{:keys [freq recur-start recur-end], :as day-rec}]
   (let [start-daynum (:daynum recur-start)
         end-daynum (:daynum recur-end)
-        adjusted-start-daynum (- start-daynum (mod start-daynum freq))
-        adjusted-end-daynum (if (nil? end-daynum)
-                              nil
-                              (+ end-daynum
-                                 (mod (- start-daynum end-daynum) freq)))]
+        [adjusted-start-daynum adjusted-end-daynum]
+          (adjust-start-end-with-freq start-daynum end-daynum freq)]
     (-> day-rec
         (dissoc :recur-start)
         (dissoc :recur-end)
         (assoc :recur-period-remainder (mod start-daynum freq))
         (assoc :recur-period-start adjusted-start-daynum)
         (assoc :recur-period-end adjusted-end-daynum))))
+
+(defn week-rec-to-periods
+  "Convert a week recurrence pattern into some abstract recurrence periods. In the
+  ideal case there will be only one period. But since we do not allow any
+  further filtering of start and end dates in this abstract representation,
+  there may be some separate periods for incomplete recurrences. An incomplete
+  recurrence refers to the scenario where the start/end date is not a Sunday,
+  and therefore involves a partial week."
+  [{:keys [freq dow recur-start recur-end], :as week-rec}]
+  (let [start-weeknum (week-num recur-start)
+        remainder (mod start-weeknum freq)
+        end-weeknum (if (nil? recur-end) nil (week-num recur-end))
+        front-partial-week
+          (if (and (> (:dow recur-start) 0)
+                   (some #(>= % (:dow recur-start)) dow))
+            (-> week-rec
+                (dissoc :recur-start)
+                (dissoc :recur-end)
+                (assoc :dow (into (hash-set)
+                                  (filter #(>= % (:dow recur-start)) dow)))
+                (assoc :recur-period-remainder 0)
+                (assoc :freq 1)
+                (assoc :recur-period-start start-weeknum)
+                (assoc :recur-period-end (inc start-weeknum))))
+        back-partial-week
+          (if (and (not (nil? recur-end))
+                   (> (:dow recur-end) 0)
+                   (some #(< % (:dow recur-end)) dow))
+            (-> week-rec
+                (dissoc :recur-start)
+                (dissoc :recur-end)
+                (assoc :dow (into (hash-set)
+                                  (filter #(< % (:dow recur-end)) dow)))
+                (assoc :recur-period-remainder 0)
+                (assoc :freq 1)
+                (assoc :recur-period-start end-weeknum)
+                (assoc :recur-period-end (inc end-weeknum))))
+        start-weeknum
+          (if (> (:dow recur-start) 0) (+ freq start-weeknum) start-weeknum)
+        [start-weeknum end-weeknum]
+          (adjust-start-end-with-freq start-weeknum end-weeknum freq)
+        middle-weeks (if (or (nil? end-weeknum) (> end-weeknum start-weeknum))
+                       (-> week-rec
+                           (dissoc :recur-start)
+                           (dissoc :recur-end)
+                           (assoc :recur-period-remainder remainder)
+                           (assoc :recur-period-start start-weeknum)
+                           (assoc :recur-period-end end-weeknum)))]
+    (filter identity [front-partial-week middle-weeks back-partial-week])))
 
 (defn rec-period-has-occ
   "Determine whether a recurrence has at least one occurrence."
