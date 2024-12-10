@@ -942,12 +942,26 @@
     ;; TODO Do we need another recombine?
     (map period-to-day-rec)))
 
+(defn merge-week-recs
+  [recs]
+  {:pre [(not (empty? recs)) (every? map? recs)
+         (every? #(= (:recur-type %) :week) recs) (apply = (map :freq recs))
+         (apply = (map :recur-period-start recs))
+         (apply = (map :recur-period-end recs))]}
+  (assoc (first recs) :dow (apply cset/union (map :dow recs))))
+
 (defn optimize-week-recs
   [week-recs]
   (->> week-recs
        (mapcat week-rec-to-periods)
        (split-recs-without-overlap)
        (filter rec-period-has-occ)
+       (sort-by :recur-period-start)
+       (partition-by :recur-period-start)
+       (mapcat #(->> %
+                     (group-by :freq)
+                     (vals)
+                     (map merge-week-recs)))
        ;; TODO
        (map period-to-week-rec)))
 
