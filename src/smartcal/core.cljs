@@ -602,6 +602,24 @@
       result
       (assoc result :recur-end (day-num-to-date recur-period-end)))))
 
+(defn period-to-week-rec
+  "Convert a week recurrence with abstract periods back into recur-start and
+  recur-end."
+  [{:keys [recur-period-start recur-period-end recur-period-remainder freq dow],
+    :as week-rec}]
+  (let [start (week-num-day-to-date
+                (+ recur-period-start
+                   (mod (- recur-period-remainder recur-period-start) freq))
+                0)
+        result (-> week-rec
+                   (dissoc :recur-period-remainder)
+                   (dissoc :recur-period-start)
+                   (dissoc :recur-period-end)
+                   (assoc :recur-start start))]
+    (if (nil? recur-period-end)
+      result
+      (assoc result :recur-end (week-num-day-to-date recur-period-end 0)))))
+
 (defn split-recs-without-overlap
   "Split a seq of recurrence patterns into new patterns without any overlapping
   start and end."
@@ -924,7 +942,15 @@
     ;; TODO Do we need another recombine?
     (map period-to-day-rec)))
 
-(defn optimize-week-recs [x] x) ;; TODO
+(defn optimize-week-recs
+  [week-recs]
+  (->> week-recs
+       (mapcat week-rec-to-periods)
+       (split-recs-without-overlap)
+       (filter rec-period-has-occ)
+       ;; TODO
+       (map period-to-week-rec)))
+
 (defn optimize-month-recs [x] x) ;; TODO
 (defn optimize-year-recs [x] x) ;; TODO
 

@@ -1982,6 +1982,21 @@
                              :recur-start (c/day-num-to-date start),
                              :recur-end (c/day-num-to-date end)})))
 
+(defn- week-rec
+  ([freq dows start]
+   (c/event-from-single-rec "x"
+                            {:recur-type :week,
+                             :dow (into (hash-set) dows),
+                             :freq freq,
+                             :recur-start (c/day-num-to-date start)}))
+  ([freq dows start end]
+   (c/event-from-single-rec "x"
+                            {:recur-type :week,
+                             :dow (into (hash-set) dows),
+                             :freq freq,
+                             :recur-start (c/day-num-to-date start),
+                             :recur-end (c/day-num-to-date end)})))
+
 (deftest optimize-event
   (is (= (c/optimize-event (c/event-from-single-occ "x"
                                                     (c/ymd-to-date 2024 1 1)))
@@ -2091,4 +2106,9 @@
   (is (= (c/optimize-event (reduce c/merge-event
                              [(day-rec 3 98 99) (day-rec 3 100 101)
                               (day-rec 3 101 102) (day-rec 1 102)]))
-         (c/merge-event (day-rec 1 100) (day-rec 1 98 99)))))
+         (c/merge-event (day-rec 1 100) (day-rec 1 98 99))))
+  (is (= (c/optimize-event (week-rec 1 #{1 6} 699 1403))
+         (reduce c/merge-event
+           [(week-rec 1 #{6} 694 701) (week-rec 1 #{1 6} 701 1401)
+            (week-rec 1 #{1} 1401 1408)]))
+      "split incomplete recurrences"))
