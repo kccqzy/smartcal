@@ -661,6 +661,10 @@
   then the latter can be eliminated. For example [x===1(mod 2), x===3(mod 4)]
   can be simplified to [x===1(mod 2)]."
   [grouped-recs]
+  {:pre [(sequential? grouped-recs)
+         (apply = (map :recur-period-start grouped-recs))
+         (apply = (map :recur-period-end grouped-recs))
+         (every? integer? (map :freq grouped-recs))]}
   ;; WARNING: QUADRATIC LOOP
   (persistent!
     (reduce (fn [grp {r2 :recur-period-remainder, d2 :freq, :as new}]
@@ -904,15 +908,12 @@
         (recur (conj! single-occs occ) multi-occ-recs (rest recs))
         (recur single-occs (conj! multi-occ-recs (first recs)) (rest recs))))))
 
-(defn optimize-day-recs
-  [day-recs]
+(defn optimize-recs-generic
+  [recs]
   ;; This feels very ad-hoc to me: it's like a compiler's optimizer being
   ;; from a manually composed set of passes.
   (->>
-    day-recs
-    (map day-rec-to-period)
-    (split-recs-without-overlap)
-    (filter rec-period-has-occ)
+    recs
     ;; We need sort-by and partition-by; if we just used group-by the
     ;; period starts are still unsorted, violating preconditions for
     ;; passes later in the pipeline.
@@ -939,8 +940,20 @@
     (split-recs-without-overlap)
     (filter rec-period-has-occ)
     (absorb-single-occs-from-recs)
-    ;; TODO Do we need another recombine?
-    (map period-to-day-rec)))
+    ;; And then we need another recombine. See unit tests for reason.
+    (sort-by :recur-period-start)
+    (group-by (juxt :freq :recur-period-remainder))
+    (vals)
+    (mapcat recombine-periods)))
+
+(defn optimize-day-recs
+  [day-recs]
+  (->> day-recs
+       (map day-rec-to-period)
+       (split-recs-without-overlap)
+       (filter rec-period-has-occ)
+       (optimize-recs-generic)
+       (map period-to-day-rec)))
 
 (defn merge-week-recs
   [recs]
@@ -956,13 +969,12 @@
        (mapcat week-rec-to-periods)
        (split-recs-without-overlap)
        (filter rec-period-has-occ)
-       (sort-by :recur-period-start)
-       (partition-by :recur-period-start)
-       (mapcat #(->> %
-                     (group-by :freq)
-                     (vals)
-                     (map merge-week-recs)))
-       ;; TODO
+       (group-by (juxt :freq :recur-period-remainder :recur-period-start))
+       (vals)
+       (map merge-week-recs)
+       (group-by :dow)
+       (vals)
+       (mapcat optimize-recs-generic)
        (map period-to-week-rec)))
 
 (defn optimize-month-recs [x] x) ;; TODO
