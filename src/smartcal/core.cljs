@@ -1370,6 +1370,7 @@
                            :optimize-events true,
                            :autocomplete true,
                            :explain-cmd true,
+                           :alt-color true,
                            :cmdline-input "",
                            :cmdline-output
                              "Welcome to smartcal. Type \"help\" for help.",
@@ -1704,12 +1705,13 @@
 ;; Components
 
 (defc day-component
-  [{:keys [y m d], :as ymd} show-complete events-on-this-date]
+  [{:keys [y m d], :as ymd} ^boolean should-alt-color ^boolean show-complete
+   events-on-this-date]
   (bind events-sorted
         (sort-by :evname gstr/intAwareCompare events-on-this-date))
   (render
     (<<
-      [:div.td
+      [:div.td {:class (if (and should-alt-color (== 0 (mod m 2))) "alt")}
        [:p.day
         (if show-complete
           (format-date-en-us ymd)
@@ -1918,6 +1920,7 @@
   (bind should-autocomplete (sg/kv-lookup :ui :autocomplete))
   (bind should-opt (sg/kv-lookup :ui :optimize-events))
   (bind should-explain (sg/kv-lookup :ui :explain-cmd))
+  (bind should-alt-color (sg/kv-lookup :ui :alt-color))
   (render
     (<<
       [:div.slider-control
@@ -1929,6 +1932,12 @@
          :min 1,
          :max 60,
          :on-change :modify-weeks-to-show}] [:p weeks-to-show]]
+      [:div.checkbox-control
+       [:input#alt-month
+        {:type "checkbox",
+         :checked should-alt-color,
+         :on-click :modify-alt-color}]
+       [:label {:for "alt-month"} "Alternate colors every other month"]]
       [:div.checkbox-control
        [:input#opt
         {:type "checkbox", :checked should-opt, :on-click :modify-optimization}]
@@ -1955,6 +1964,12 @@
                     {:e :modify-ui-prefs,
                      :key :weeks-to-show,
                      :value (js/parseInt (.. e -target -value) 10)}))
+  (event :modify-alt-color
+         [env _ e]
+         (sg/run-tx env
+                    {:e :modify-ui-prefs,
+                     :key :alt-color,
+                     :value (.. e -target -checked)}))
   (event :modify-autocomplete
          [env _ e]
          (sg/run-tx env
@@ -2205,6 +2220,7 @@
 (defc calendar-component
   []
   (bind weeks-to-show (sg/kv-lookup :ui :weeks-to-show))
+  (bind ^boolean should-alt-color (sg/kv-lookup :ui :alt-color))
   (bind start (actual-start (sg/kv-lookup :ui :start-date)))
   (bind until (day-num-to-date (+ (* 7 weeks-to-show) (:daynum start))))
   (bind days-with-events
@@ -2219,6 +2235,7 @@
                   :daynum
                   (fn [date]
                     (day-component date
+                                   should-alt-color
                                    (== (:daynum start) (:daynum date))
                                    (get days-with-events date))))]
                [:div#cmdline-inout (cmdline-output-component)

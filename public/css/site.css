@@ -102,6 +102,10 @@ div#table > .td {
     flex-direction: column;
 }
 
+div#table > .td.alt {
+    background-color: #e0e0e0;
+}
+
 div#table > .td:nth-last-child(1),
 div#table > .td:nth-last-child(2),
 div#table > .td:nth-last-child(3),
