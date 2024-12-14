@@ -218,6 +218,20 @@
     (range from to)
     (range (+ from (mod (- val from) divisor)) to divisor)))
 
+(defn modulo-remainder-seq-not-empty?
+  [divisor val from to]
+  {:post [(= % (not (empty? (modulo-remainder-seq divisor val from to))))]}
+  (< (+ from (mod (- val from) divisor)) to))
+
+(defn modulo-remainder-seq-sole-element
+  [divisor val from to]
+  {:post [(if (nil? %)
+            (not= 1 (count (modulo-remainder-seq divisor val from to)))
+            (and (= 1 (count (modulo-remainder-seq divisor val from to)))
+                 (= % (first (modulo-remainder-seq divisor val from to)))))]}
+  (let [fst (+ from (mod (- val from) divisor))]
+    (if (and (< fst to) (>= (+ fst divisor) to)) fst)))
+
 (defn soonest-day-of-week
   "Return the daynum for the given day of week that is the soonest on or after the specified start date."
   [start dow]
@@ -578,12 +592,20 @@
 
 (defn rec-period-has-occ
   "Determine whether a recurrence has at least one occurrence."
-  [{:keys [recur-period-start recur-period-end recur-period-remainder freq]}]
-  (or (nil? recur-period-end)
-      (not (empty? (modulo-remainder-seq freq
-                                         recur-period-remainder
-                                         recur-period-start
-                                         recur-period-end)))))
+  [{from :recur-period-start,
+    to :recur-period-end,
+    rem :recur-period-remainder,
+    divisor :freq}]
+  (or (nil? to) (modulo-remainder-seq-not-empty? divisor rem from to)))
+
+(defn rec-period-sole-occ
+  "Determine whether a recurrence has exactly one occurrence. If so, return that
+  occurrence; otherwise, return nil."
+  [{from :recur-period-start,
+    to :recur-period-end,
+    rem :recur-period-remainder,
+    divisor :freq}]
+  (if (nil? to) nil (modulo-remainder-seq-sole-element divisor rem from to)))
 
 (defn period-to-day-rec
   "Convert a day recurrence with abstract periods back into recur-start and
@@ -1112,6 +1134,33 @@
              (cstr/join "; " (map format-date-en-us displayed-occurrences))
              (if ellipsis "; \u2026")
              ")")))))
+
+(defn format-recur-pat-single-period
+  [recur-pat]
+  (case (:recur-type recur-pat)
+    :day (if-let [occ (rec-period-sole-occ (day-rec-to-period recur-pat))]
+           (str "On " (format-date-en-us (day-num-to-date occ))))
+    :week (let [recs (week-rec-to-periods recur-pat)]
+            (if (== 1 (count recs))
+              (if-let [occ (rec-period-sole-occ (first recs))]
+                (str "During the week of " (format-date-en-us
+                                             (week-num-day-to-date occ 0))
+                     " on " (cstr/join ", "
+                                       (map #(str (get day-names %)
+                                                  " ("
+                                                  (format-date-en-us
+                                                    (week-num-day-to-date occ
+                                                                          %))
+                                                  ")")
+                                         (sort (:dow recur-pat))))))))
+    nil))
+
+(defn format-recur-pat-with-single-period-exception
+  "Format a recur pat, except that when the recur pat refers to a single abstract
+  recur period, use a different format."
+  [recur-pat]
+  (or (format-recur-pat-single-period recur-pat)
+      (str "Repeating " (format-recur-pat recur-pat))))
 
 (defn format-event
   [{:keys [evname specific-occs recur-pats]} start until]
@@ -1891,16 +1940,18 @@
                        (if-let [date (first specific-occs)]
                          (str "On " (format-date-en-us date)))
                        (if-let [pat (first recur-pats)]
-                         (str "Repeating " (format-recur-pat pat)))])
-                  (<< [:details [:summary (str cnt " rules")]
+                         (format-recur-pat-with-single-period-exception pat))])
+                  (<< [:details {:open true} [:summary (str cnt " rules")]
                        [:ul
                         (sg/simple-seq
                           (seq specific-occs)
                           (fn [date] (<< [:li "On " (format-date-en-us date)])))
-                        (sg/simple-seq recur-pats
-                                       (fn [pat]
-                                         (<< [:li "Repeating "
-                                              (format-recur-pat pat)])))]])))
+                        (sg/simple-seq
+                          recur-pats
+                          (fn [pat]
+                            (<< [:li
+                                 (format-recur-pat-with-single-period-exception
+                                   pat)])))]])))
               (let [cnt (count visible-occurrences)]
                 (if (== cnt 0)
                   (<< [:p "No occurrences shown"])

@@ -958,6 +958,43 @@
                               :recur-start c/epoch})
          "every year on the last Friday of June since time immemorial")))
 
+(deftest format-recur-pat-with-single-period-exception
+  (is (= (c/format-recur-pat-with-single-period-exception
+           {:recur-type :day,
+            :freq 10,
+            :recur-start (c/ymd-to-date 2024 11 1),
+            :recur-end (c/ymd-to-date 2024 11 5)})
+         "On Dec 1, 2024"))
+  (is (= (c/format-recur-pat-with-single-period-exception
+           {:recur-type :day,
+            :freq 10,
+            :recur-start (c/ymd-to-date 2024 11 1),
+            :recur-end (c/ymd-to-date 2024 11 12)})
+         "Repeating every 10 days from Dec 1, 2024 until Dec 12, 2024"))
+  (is (= (c/format-recur-pat-with-single-period-exception
+           {:recur-type :week,
+            :freq 1,
+            :dow #{6},
+            :recur-start (c/ymd-to-date 2024 11 9),
+            :recur-end (c/ymd-to-date 2024 11 16)})
+         "During the week of Dec 8, 2024 on Sat (Dec 14, 2024)"))
+  (is
+    (=
+      (c/format-recur-pat-with-single-period-exception
+        {:recur-type :week,
+         :freq 1,
+         :dow #{5 6},
+         :recur-start (c/ymd-to-date 2024 11 9),
+         :recur-end (c/ymd-to-date 2024 11 18)})
+      "During the week of Dec 8, 2024 on Fri (Dec 13, 2024), Sat (Dec 14, 2024)"))
+  (is (= (c/format-recur-pat-with-single-period-exception
+           {:recur-type :week,
+            :freq 1,
+            :dow #{6},
+            :recur-start (c/ymd-to-date 2024 11 9),
+            :recur-end (c/ymd-to-date 2025 11 16)})
+         "Repeating every week on Sat from Dec 9, 2024 until Dec 16, 2025")))
+
 (deftest format-event
   (is (= (c/format-event (c/event-from-single-occ "x" (c/ymd-to-date 2010 1 1))
                          nil
