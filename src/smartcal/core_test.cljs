@@ -1623,6 +1623,14 @@
            :recur-period-start (inc (c/week-num (c/ymd-to-date 2024 11 14))),
            :recur-period-end nil}])
       "no partial week at the front because no occ")
+  (is (= (c/week-rec-to-periods
+           {:freq 2, :dow #{5 6}, :recur-start (c/ymd-to-date 2024 11 12)})
+         [{:freq 2,
+           :dow #{5 6},
+           :recur-period-remainder 1,
+           :recur-period-start 22172,
+           :recur-period-end nil}])
+      "no partial week at the front because can be extended backwards")
   (is (= (c/week-rec-to-periods {:freq 1,
                                  :dow #{1 6},
                                  :recur-start (c/ymd-to-date 2024 11 8),
@@ -1648,6 +1656,16 @@
            :recur-period-start (c/week-num (c/ymd-to-date 2024 11 8)),
            :recur-period-end (c/week-num (c/ymd-to-date 2024 11 29))}])
       "no partial week at the end because no occ")
+  (is (= (c/week-rec-to-periods {:freq 2,
+                                 :dow #{1 0},
+                                 :recur-start (c/ymd-to-date 2024 11 15),
+                                 :recur-end (c/ymd-to-date 2024 11 31)})
+         [{:freq 2,
+           :dow #{1 0},
+           :recur-period-remainder 0,
+           :recur-period-start (c/week-num (c/ymd-to-date 2024 11 15)),
+           :recur-period-end (c/week-num (c/ymd-to-date 2025 0 12))}])
+      "no partial week at the end because can be extended")
   (is (= (c/week-rec-to-periods
            {:freq 2, :dow #{1}, :recur-start (c/ymd-to-date 2024 11 1)})
          [{:freq 2,

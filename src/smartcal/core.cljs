@@ -546,15 +546,16 @@
   ideal case there will be only one period. But since we do not allow any
   further filtering of start and end dates in this abstract representation,
   there may be some separate periods for incomplete recurrences. An incomplete
-  recurrence refers to the scenario where the start/end date is not a Sunday,
-  and therefore involves a partial week."
+  recurrence refers to the scenario where the period containing the recur-start
+  and/or recur-end has some occurrences before the recur-start/recur-end and
+  some other."
   [{:keys [freq dow recur-start recur-end], :as week-rec}]
   (let [start-weeknum (week-num recur-start)
         remainder (mod start-weeknum freq)
         end-weeknum (if (nil? recur-end) nil (week-num recur-end))
         front-partial-week
-          (if (and (> (:dow recur-start) 0)
-                   (some #(>= % (:dow recur-start)) dow))
+          (if (and (some #(>= % (:dow recur-start)) dow)
+                   (some #(< % (:dow recur-start)) dow))
             (-> week-rec
                 (dissoc :recur-start)
                 (dissoc :recur-end)
@@ -566,7 +567,7 @@
                 (assoc :recur-period-end (inc start-weeknum))))
         back-partial-week
           (if (and (not (nil? recur-end))
-                   (> (:dow recur-end) 0)
+                   (some #(>= % (:dow recur-end)) dow)
                    (some #(< % (:dow recur-end)) dow))
             (-> week-rec
                 (dissoc :recur-start)
@@ -577,8 +578,15 @@
                 (assoc :freq 1)
                 (assoc :recur-period-start end-weeknum)
                 (assoc :recur-period-end (inc end-weeknum))))
-        start-weeknum
-          (if (> (:dow recur-start) 0) (+ freq start-weeknum) start-weeknum)
+        start-weeknum (if (and (not (some #(< % (:dow recur-start)) dow))
+                               (some #(>= % (:dow recur-start)) dow))
+                        start-weeknum
+                        (+ freq start-weeknum))
+        end-weeknum (if (not (nil? end-weeknum))
+                      (if (and (some #(< % (:dow recur-end)) dow)
+                               (not (some #(>= % (:dow recur-end)) dow)))
+                        (+ freq end-weeknum)
+                        end-weeknum))
         [start-weeknum end-weeknum]
           (adjust-start-end-with-freq start-weeknum end-weeknum freq)
         middle-weeks (if (or (nil? end-weeknum) (> end-weeknum start-weeknum))
@@ -588,6 +596,12 @@
                            (assoc :recur-period-remainder remainder)
                            (assoc :recur-period-start start-weeknum)
                            (assoc :recur-period-end end-weeknum)))]
+    (assert
+      (or (nil? front-partial-week) (not= (:dow front-partial-week) dow))
+      "if there is a front partial week, then its dow selection must have been different")
+    (assert
+      (or (nil? back-partial-week) (not= (:dow back-partial-week) dow))
+      "if there is a back partial week, then its dow selection must have been different")
     (filter identity [front-partial-week middle-weeks back-partial-week])))
 
 (defn rec-period-has-occ
