@@ -553,56 +553,71 @@
   (let [start-weeknum (week-num recur-start)
         remainder (mod start-weeknum freq)
         end-weeknum (if (nil? recur-end) nil (week-num recur-end))
+        rv-tmpl (-> week-rec
+                    (dissoc :recur-start)
+                    (dissoc :recur-end))
+        first-period-all-selected-days
+          (into [] (select-dates-from-week-recur week-rec [start-weeknum]))
+        first-period-has-occ (seq (drop-while #(< (:daynum %)
+                                                  (:daynum recur-start))
+                                              first-period-all-selected-days))
+        first-period-has-skipped-occ
+          (< (:daynum (first first-period-all-selected-days))
+             (:daynum recur-start))
         front-partial-week
-          (if (and (some #(>= % (:dow recur-start)) dow)
-                   (some #(< % (:dow recur-start)) dow))
-            (-> week-rec
-                (dissoc :recur-start)
-                (dissoc :recur-end)
+          (if (and first-period-has-occ first-period-has-skipped-occ)
+            (-> rv-tmpl
                 (assoc :dow (into (hash-set)
                                   (filter #(>= % (:dow recur-start)) dow)))
                 (assoc :recur-period-remainder 0)
                 (assoc :freq 1)
                 (assoc :recur-period-start start-weeknum)
                 (assoc :recur-period-end (inc start-weeknum))))
+        final-period-all-selected-days
+          (if (nil? end-weeknum)
+            nil
+            (into [] (select-dates-from-week-recur week-rec [end-weeknum])))
+        final-period-has-occ (< (:daynum (first final-period-all-selected-days))
+                                (:daynum recur-end))
+        final-period-has-skipped-occ (seq (drop-while
+                                            #(< (:daynum %) (:daynum recur-end))
+                                            final-period-all-selected-days))
         back-partial-week
-          (if (and (not (nil? recur-end))
-                   (some #(>= % (:dow recur-end)) dow)
-                   (some #(< % (:dow recur-end)) dow))
-            (-> week-rec
-                (dissoc :recur-start)
-                (dissoc :recur-end)
+          (if (and (not (nil? final-period-all-selected-days))
+                   final-period-has-skipped-occ
+                   final-period-has-occ)
+            (-> rv-tmpl
                 (assoc :dow (into (hash-set)
                                   (filter #(< % (:dow recur-end)) dow)))
                 (assoc :recur-period-remainder 0)
                 (assoc :freq 1)
                 (assoc :recur-period-start end-weeknum)
                 (assoc :recur-period-end (inc end-weeknum))))
-        start-weeknum (if (and (not (some #(< % (:dow recur-start)) dow))
-                               (some #(>= % (:dow recur-start)) dow))
+        start-weeknum (if (and (not first-period-has-skipped-occ)
+                               first-period-has-occ)
                         start-weeknum
                         (+ freq start-weeknum))
         end-weeknum (if (not (nil? end-weeknum))
-                      (if (and (some #(< % (:dow recur-end)) dow)
-                               (not (some #(>= % (:dow recur-end)) dow)))
+                      (if (and final-period-has-occ
+                               (not final-period-has-skipped-occ))
                         (+ freq end-weeknum)
                         end-weeknum))
         [start-weeknum end-weeknum]
           (adjust-start-end-with-freq start-weeknum end-weeknum freq)
         middle-weeks (if (or (nil? end-weeknum) (> end-weeknum start-weeknum))
-                       (-> week-rec
-                           (dissoc :recur-start)
-                           (dissoc :recur-end)
+                       (-> rv-tmpl
                            (assoc :recur-period-remainder remainder)
                            (assoc :recur-period-start start-weeknum)
                            (assoc :recur-period-end end-weeknum)))]
+    (assert (not (empty? first-period-all-selected-days)))
+    (assert (or (nil? recur-end) (not (empty? final-period-all-selected-days))))
     (assert
       (or (nil? front-partial-week) (not= (:dow front-partial-week) dow))
       "if there is a front partial week, then its dow selection must have been different")
     (assert
       (or (nil? back-partial-week) (not= (:dow back-partial-week) dow))
       "if there is a back partial week, then its dow selection must have been different")
-    (filter identity [front-partial-week middle-weeks back-partial-week])))
+    (remove nil? [front-partial-week middle-weeks back-partial-week])))
 
 (defn rec-period-has-occ
   "Determine whether a recurrence has at least one occurrence."
