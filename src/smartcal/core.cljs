@@ -1178,6 +1178,13 @@
   (cstr/join ", "
              (map #(get occurrence-ordinals-inv %) (sort (:occ recur-pat)))))
 
+(defn format-month-recur-day-selection
+  [recur-pat]
+  (case (:day-selection recur-pat)
+    :d (cstr/join ", " (map day-to-ordinal (sort (:d recur-pat))))
+    :dow
+      (str (format-occ recur-pat) " " (get full-day-names (:dow recur-pat)))))
+
 (defn format-recur-pat
   [recur-pat]
   (let [start (if-let [start (:recur-start recur-pat)]
@@ -1201,13 +1208,7 @@
                                              (sort (:dow recur-pat)))))
               :month (str (format-freq recur-pat)
                           " on the "
-                          (case (:day-selection recur-pat)
-                            :d (cstr/join ", "
-                                          (map day-to-ordinal
-                                            (sort (:d recur-pat))))
-                            :dow (str (format-occ recur-pat)
-                                      " "
-                                      (get full-day-names (:dow recur-pat)))))
+                          (format-month-recur-day-selection recur-pat))
               :year (str (format-freq recur-pat)
                          " on "
                          (case (:day-selection recur-pat)
@@ -1255,6 +1256,13 @@
                                                                           %))
                                                   ")")
                                          (sort (:dow recur-pat))))))))
+    :month (let [recs (week-month-rec-to-periods recur-pat)]
+             (if (== 1 (count recs))
+               (if-let [occ (rec-period-sole-occ (first recs))]
+                 (str "During the month of " (get month-names (mod occ 12))
+                      " " (+ 1600 (quot occ 12))
+                      " on the " (format-month-recur-day-selection
+                                   recur-pat)))))
     nil))
 
 (defn format-recur-pat-with-single-period-exception

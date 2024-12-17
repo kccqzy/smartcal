@@ -993,7 +993,25 @@
             :dow #{6},
             :recur-start (c/ymd-to-date 2024 11 9),
             :recur-end (c/ymd-to-date 2025 11 16)})
-         "Repeating every week on Sat from Dec 9, 2024 until Dec 16, 2025")))
+         "Repeating every week on Sat from Dec 9, 2024 until Dec 16, 2025"))
+  (is (= (c/format-recur-pat-with-single-period-exception
+           {:recur-type :month,
+            :freq 1,
+            :day-selection :d,
+            :d #{20 10},
+            :recur-start (c/ymd-to-date 2024 11 2),
+            :recur-end (c/ymd-to-date 2024 11 25)})
+         "During the month of Dec 2024 on the 10th, 20th"))
+  (is (= (c/format-recur-pat-with-single-period-exception
+           {:recur-type :month,
+            :freq 1,
+            :day-selection :dow,
+            :dow 3,
+            :occ #{-1 0 3},
+            :recur-start (c/ymd-to-date 2024 11 2),
+            :recur-end (c/ymd-to-date 2024 11 25)})
+         ;; TODO here last and fourth are redundant; should we handle this?
+         "During the month of Dec 2024 on the last, first, fourth Wednesday")))
 
 (deftest format-event
   (is (= (c/format-event (c/event-from-single-occ "x" (c/ymd-to-date 2010 1 1))
