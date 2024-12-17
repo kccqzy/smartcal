@@ -249,12 +249,23 @@
                                      7))]
     (into [] all-occurrences)))
 
+(defn get-neg
+  "Like get on a vector, except works with negative indices."
+  [v i]
+  {:pre [(vector? v) (integer? i)]}
+  (if (>= i 0) (get v i) (get v (+ (count v) i))))
+
 (defn all-nd-weekdays-of-month
   "Find all days that are of the given ordinals of the given day of week in a
   month. The ordinals may be non-negative (usual indexing) or negative (counting
   from the back.)"
   [occurrences day-of-week m y]
-  {:pre [(set? occurrences)]}
+  {:pre [(set? occurrences)],
+   :post [(= %
+             (dedupe (sort-by :d
+                              (keep
+                                #(get-neg (weekdays-of-month day-of-week m y) %)
+                                occurrences))))]}
   (let [all-dows (weekdays-of-month day-of-week m y)
         cnt (count all-dows)]
     (keep-indexed (fn [idx date]
@@ -557,8 +568,32 @@
               (update rec
                       :dow
                       (fn [dows]
+                        {:post [(not (empty? %))]}
                         (into (hash-set)
-                              (filter #(comp % (:dow split-point)) dows)))))))
+                              (filter #(comp % (:dow split-point)) dows)))))
+    :month (do
+             (assert (<= (:daynum (month-num-day-to-date period 1))
+                         (:daynum split-point)
+                         (dec (:daynum (month-num-day-to-date (inc period) 1))))
+                     "split point must be within range")
+             (case (:day-selection rec)
+               :d (update rec
+                          :d
+                          (fn [ds]
+                            {:post [(not (empty? %))]}
+                            (into (hash-set)
+                                  (filter #(comp % (:d split-point)) ds))))
+               :dow (let [all-wds (weekdays-of-month (:dow rec) period 1600)]
+                      (update rec
+                              :occ
+                              (fn [occs]
+                                {:post [(not (empty? %))]}
+                                (into (hash-set)
+                                      (filter #(let [d (get-neg all-wds %)]
+                                                 (and (not (nil? d))
+                                                      (comp (:d d)
+                                                            (:d split-point))))
+                                        occs)))))))))
 
 (defn week-rec-to-periods
   "Convert a week/month/year recurrence pattern into some abstract recurrence
