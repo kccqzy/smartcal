@@ -541,15 +541,34 @@
         (assoc :recur-period-start adjusted-start-daynum)
         (assoc :recur-period-end adjusted-end-daynum))))
 
+(defn split-partial-period
+  "Split a period by modifying the intra-period day selection, based on comparison
+  against a split point. The comparison should be >=, >, <=, or < but this is
+  not enforced. The rec must be a partial period where the start and end differ
+  by 1."
+  [{period :recur-period-start, :as rec} split-point comp]
+  {:pre [(= (:freq rec) 1) (= (:recur-period-remainder rec) 0)
+         (= 1 (- (:recur-period-end rec) (:recur-period-start rec)))]}
+  (case (:recur-type rec)
+    :week (do (assert (<= (:daynum (week-num-day-to-date period 0))
+                          (:daynum split-point)
+                          (:daynum (week-num-day-to-date period 6)))
+                      "split point must be within range")
+              (update rec
+                      :dow
+                      (fn [dows]
+                        (into (hash-set)
+                              (filter #(comp % (:dow split-point)) dows)))))))
+
 (defn week-rec-to-periods
-  "Convert a week recurrence pattern into some abstract recurrence periods. In the
-  ideal case there will be only one period. But since we do not allow any
-  further filtering of start and end dates in this abstract representation,
-  there may be some separate periods for incomplete recurrences. An incomplete
-  recurrence refers to the scenario where the period containing the recur-start
-  and/or recur-end has some occurrences before the recur-start/recur-end and
-  some other."
-  [{:keys [freq dow recur-start recur-end], :as week-rec}]
+  "Convert a week/month/year recurrence pattern into some abstract recurrence
+  periods. In the ideal case there will be only one period. But since we do not
+  allow any further filtering of start and end dates in this abstract
+  representation, there may be some separate periods for incomplete recurrences.
+  An incomplete recurrence refers to the scenario where the period containing
+  the recur-start and/or recur-end has some occurrences before the
+  recur-start/recur-end and some other."
+  [{:keys [freq recur-start recur-end], :as week-rec}]
   (let [start-weeknum (week-num recur-start)
         remainder (mod start-weeknum freq)
         end-weeknum (if (nil? recur-end) nil (week-num recur-end))
@@ -564,15 +583,14 @@
         first-period-has-skipped-occ
           (< (:daynum (first first-period-all-selected-days))
              (:daynum recur-start))
-        front-partial-week
-          (if (and first-period-has-occ first-period-has-skipped-occ)
-            (-> rv-tmpl
-                (assoc :dow (into (hash-set)
-                                  (filter #(>= % (:dow recur-start)) dow)))
-                (assoc :recur-period-remainder 0)
-                (assoc :freq 1)
-                (assoc :recur-period-start start-weeknum)
-                (assoc :recur-period-end (inc start-weeknum))))
+        front-partial-week (if (and first-period-has-occ
+                                    first-period-has-skipped-occ)
+                             (-> rv-tmpl
+                                 (assoc :recur-period-remainder 0)
+                                 (assoc :freq 1)
+                                 (assoc :recur-period-start start-weeknum)
+                                 (assoc :recur-period-end (inc start-weeknum))
+                                 (split-partial-period recur-start >=)))
         final-period-all-selected-days
           (if (nil? end-weeknum)
             nil
@@ -582,17 +600,15 @@
         final-period-has-skipped-occ (seq (drop-while
                                             #(< (:daynum %) (:daynum recur-end))
                                             final-period-all-selected-days))
-        back-partial-week
-          (if (and (not (nil? final-period-all-selected-days))
-                   final-period-has-skipped-occ
-                   final-period-has-occ)
-            (-> rv-tmpl
-                (assoc :dow (into (hash-set)
-                                  (filter #(< % (:dow recur-end)) dow)))
-                (assoc :recur-period-remainder 0)
-                (assoc :freq 1)
-                (assoc :recur-period-start end-weeknum)
-                (assoc :recur-period-end (inc end-weeknum))))
+        back-partial-week (if (and (not (nil? final-period-all-selected-days))
+                                   final-period-has-skipped-occ
+                                   final-period-has-occ)
+                            (-> rv-tmpl
+                                (assoc :recur-period-remainder 0)
+                                (assoc :freq 1)
+                                (assoc :recur-period-start end-weeknum)
+                                (assoc :recur-period-end (inc end-weeknum))
+                                (split-partial-period recur-end <)))
         start-weeknum (if (and (not first-period-has-skipped-occ)
                                first-period-has-occ)
                         start-weeknum
@@ -612,11 +628,31 @@
     (assert (not (empty? first-period-all-selected-days)))
     (assert (or (nil? recur-end) (not (empty? final-period-all-selected-days))))
     (assert
-      (or (nil? front-partial-week) (not= (:dow front-partial-week) dow))
-      "if there is a front partial week, then its dow selection must have been different")
+      (or (nil? front-partial-week)
+          (not= (dissoc front-partial-week
+                  :recur-period-start
+                  :recur-period-end
+                  :recur-period-remainder
+                  :freq)
+                (dissoc week-rec
+                  :recur-period-start
+                  :recur-period-end
+                  :recur-period-remainder
+                  :freq)))
+      "if there is a front partial period, then its attributes must have been different")
     (assert
-      (or (nil? back-partial-week) (not= (:dow back-partial-week) dow))
-      "if there is a back partial week, then its dow selection must have been different")
+      (or (nil? back-partial-week)
+          (not= (dissoc back-partial-week
+                  :recur-period-start
+                  :recur-period-end
+                  :recur-period-remainder
+                  :freq)
+                (dissoc week-rec
+                  :recur-period-start
+                  :recur-period-end
+                  :recur-period-remainder
+                  :freq)))
+      "if there is a back partial period, then its attributes must have been different")
     (remove nil? [front-partial-week middle-weeks back-partial-week])))
 
 (defn rec-period-has-occ
