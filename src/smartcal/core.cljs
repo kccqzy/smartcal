@@ -1104,7 +1104,7 @@
 (defn optimize-month-recs [x] x) ;; TODO
 (defn optimize-year-recs [x] x) ;; TODO
 
-(defn optimize-event
+(defn- optimize-event-once
   "Optimize the recurrences of an event. The notion of optimality is not precisely
   defined, but it corresponds to a subjective notion of ease of comprehension."
   [{:keys [recur-pats], :as event}]
@@ -1117,6 +1117,12 @@
         opt-year (optimize-year-recs (:year grouped-recs))]
     (assoc event
       :recur-pats (into [] (concat opt-day opt-week opt-month opt-year)))))
+
+(defn optimize-event
+  "Same as optimize-event-once, but with a check that the function is idempotent."
+  [event]
+  {:post [(= % (optimize-event-once %))]}
+  (optimize-event-once event))
 
 (defn merge-and-possibly-optimize-event
   [existing new opt]
