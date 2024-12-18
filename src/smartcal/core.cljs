@@ -378,7 +378,7 @@
   {:pre [(integer? period) (> period 0) (integer? start-month)]}
   (or (== 1 start-month) (== 0 (mod (- 1 start-month) (gcd period 12)))))
 
-(defn find-first-start
+(defn find-first-occ
   "Find the first occurrence of a recurrence series. NOTE: for pathological data,
   this function is quite slow because the first occurrence can be really far
   away. The function recurrent-event-occurrences should be preferred since it
@@ -486,7 +486,7 @@
   [{:keys [recur-start], :as recur-pat}]
   {:pre [(contains? recur-pat :recur-start)]}
   ;; TODO: do not dissoc :recur-end for efficiency reasons
-  (let [adjusted-recur-start (find-first-start (dissoc recur-pat :recur-end))]
+  (let [adjusted-recur-start (find-first-occ (dissoc recur-pat :recur-end))]
     (if (or (nil? adjusted-recur-start)
             (and (contains? recur-pat :recur-end)
                  (>= (:daynum adjusted-recur-start)
