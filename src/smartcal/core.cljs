@@ -290,7 +290,8 @@
   dates for the selected days within the given weeks."
   [recur-pat weeknums]
   {:pre [(keyword-identical? :week (:recur-type recur-pat))
-         (seq (:dow recur-pat))]}
+         (= weeknums (sort weeknums)) (seq (:dow recur-pat))],
+   :post [(= % (sort-by :daynum %))]}
   (for [weeknum weeknums
         dow (sort (:dow recur-pat))]
     (week-num-day-to-date weeknum dow)))
@@ -299,7 +300,9 @@
   "Given a monthly recurrence pattern and a seq of month numbers, return a seq of
   dates for the selected days within the given months."
   [recur-pat monthnums]
-  {:pre [(keyword-identical? :month (:recur-type recur-pat))]}
+  {:pre [(keyword-identical? :month (:recur-type recur-pat))
+         (= monthnums (sort monthnums))],
+   :post [(= % (sort-by :daynum %))]}
   (case (:day-selection recur-pat)
     :d (do (assert (seq (:d recur-pat)))
            (for [monthnum monthnums
@@ -322,7 +325,9 @@
   "Given a yearly recurrence pattern and a seq of years, return a seq of dates for
   the selected days within the given years."
   [recur-pat years]
-  {:pre [(keyword-identical? :year (:recur-type recur-pat))]}
+  {:pre [(keyword-identical? :year (:recur-type recur-pat))
+         (= years (sort years))],
+   :post [(= % (sort-by :daynum %))]}
   (case (:day-selection recur-pat)
     :md (for [y years
               :let [date (ymd-to-date y (:m recur-pat) (:d recur-pat))]
