@@ -70,10 +70,28 @@
   (is (= (c/modulo-remainder-seq 7 6 6 6) []) "from = to")
   (is (= (c/modulo-remainder-seq 7 0 1 0) []) "from > to")
   (is (= (c/modulo-remainder-seq 7 6 6 7) [6]))
+  (is (= (c/modulo-remainder-seq 7 0 0 21) [0 7 14]))
+  (is (= (c/modulo-remainder-seq 7 0 0 22) [0 7 14 21]))
+  (is (= (c/modulo-remainder-seq 7 6 0 20) [6 13]))
   (is (= (c/modulo-remainder-seq 7 6 0 21) [6 13 20]))
   (is (= (c/modulo-remainder-seq 2 3 4 8) [5 7]))
   (is (= (c/modulo-remainder-seq 1 3 4 8) [4 5 6 7]))
   (is (chunked-seq? (c/modulo-remainder-seq 7 6 0 21))))
+
+(deftest modulo-remainder-rseq
+  (is (= (c/modulo-remainder-rseq 7 0 0 0) []))
+  (is (= (c/modulo-remainder-rseq 7 71 0 10) [8 1]) "val outside range")
+  (is (= (c/modulo-remainder-rseq 7 -6 0 10) [8 1]) "val negative")
+  (is (= (c/modulo-remainder-rseq 7 6 6 6) []) "from = to")
+  (is (= (c/modulo-remainder-rseq 7 0 1 0) []) "from > to")
+  (is (= (c/modulo-remainder-rseq 7 6 6 7) [6]))
+  (is (= (c/modulo-remainder-rseq 7 0 0 21) [14 7 0]))
+  (is (= (c/modulo-remainder-rseq 7 0 0 22) [21 14 7 0]))
+  (is (= (c/modulo-remainder-rseq 7 6 0 20) [13 6]))
+  (is (= (c/modulo-remainder-rseq 7 6 0 21) [20 13 6]))
+  (is (= (c/modulo-remainder-rseq 2 3 4 8) [7 5]))
+  (is (= (c/modulo-remainder-rseq 1 3 4 8) [7 6 5 4]))
+  (is (chunked-seq? (c/modulo-remainder-rseq 7 6 0 21))))
 
 (deftest all-nd-weekday-of-month
   (is (= (c/all-nd-weekdays-of-month #{0} 0 9 2024) [(c/ymd-to-date 2024 9 6)]))

@@ -210,13 +210,24 @@
 (defn prev-week ([ymd] (next-week -1 ymd)) ([n ymd] (next-week (- n) ymd)))
 
 (defn modulo-remainder-seq
-  "Returns a sequence of integers in a range where it is congruent to a specified value modulo another specified value."
+  "Returns a sequence of integers in a range where it is congruent to a specified
+  value modulo another specified value."
   [divisor val from to]
   {:pre [(integer? divisor) (integer? val) (integer? from) (integer? to)
          (>= divisor 1)]}
   (if (== divisor 1)
     (range from to)
     (range (+ from (mod (- val from) divisor)) to divisor)))
+
+(defn modulo-remainder-rseq
+  "Same as modulo-remainder-seq but reversed."
+  [divisor val from to]
+  {:pre [(integer? divisor) (integer? val) (integer? from) (integer? to)
+         (>= divisor 1)],
+   :post [(= % (reverse (modulo-remainder-seq divisor val from to)))]}
+  (if (== divisor 1)
+    (range (dec to) (dec from) -1)
+    (range (- (+ to (mod (- val to) divisor)) divisor) (dec from) (- divisor))))
 
 (defn modulo-remainder-seq-not-empty?
   [divisor val from to]
