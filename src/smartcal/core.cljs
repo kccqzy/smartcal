@@ -496,6 +496,43 @@
                       end (+ start (* max-iter step))]
                   (range start end step)))))))))
 
+(defn find-last-occ
+  "Find the last occurrence of a recurrence series. If there is no occurrence,
+  return nil (but the caller should have already detected this through the
+  function find-first-occ).
+
+  This function is not particularly optimized because several functions it calls
+  returns values in the normal and not reversed order."
+  [{:keys [freq recur-start recur-end recur-type], :as recur-pat}]
+  {:pre [(not (nil? recur-end))],
+   :post [(or (nil? %)
+              (= [%] (recurrent-event-occurrences recur-pat % recur-end)))]}
+  (if (keyword-identical? recur-type :day)
+    (some-> (first (modulo-remainder-rseq freq
+                                          (:daynum recur-start)
+                                          (:daynum recur-start)
+                                          (:daynum recur-end)))
+            (day-num-to-date))
+    (let [to-period-num (case recur-type
+                          :week week-num
+                          :month month-num
+                          :year :y)
+          selector (case recur-type
+                     :week select-dates-from-week-recur
+                     :month select-dates-from-month-recur
+                     :year select-dates-from-year-recur)
+          start (to-period-num recur-start)
+          end (inc (to-period-num recur-end))
+          periods (modulo-remainder-rseq freq start start end)]
+      (->> periods
+           (map #(selector recur-pat [%]))
+           (drop-while #(or (empty? %)
+                            (>= (:daynum (first %)) (:daynum recur-end))))
+           (first)
+           ;; Maybe nil here, but it is interpreted as the empty seq.
+           (take-while #(< (:daynum %) (:daynum recur-end)))
+           (last)))))
+
 (defn adjust-recur-start
   "Adjusts the recur-start such that it coincides with the first day of actual
   occurrence. "
