@@ -533,10 +533,11 @@
            (take-while #(< (:daynum %) (:daynum recur-end)))
            (last)))))
 
-(defn adjust-recur-start
+(defn adjust-recur-bounds
   "Adjusts the recur-start such that it coincides with the first day of actual
-  occurrence. "
-  [{:keys [recur-start], :as recur-pat}]
+  occurrence, and adjust the recur-end such that it is one past the last day of
+  actual occurrence."
+  [recur-pat]
   {:pre [(contains? recur-pat :recur-start)]}
   ;; TODO: do not dissoc :recur-end for efficiency reasons
   (let [adjusted-recur-start (find-first-occ (dissoc recur-pat :recur-end))]
@@ -545,7 +546,13 @@
                  (>= (:daynum adjusted-recur-start)
                      (:daynum (:recur-end recur-pat)))))
       nil
-      (assoc recur-pat :recur-start adjusted-recur-start))))
+      (let [recur-pat (assoc recur-pat :recur-start adjusted-recur-start)]
+        (if (nil? (:recur-end recur-pat))
+          recur-pat
+          (let [last-occ (find-last-occ recur-pat)]
+            (assert (not (nil? last-occ)))
+            (assoc recur-pat
+              :recur-end (day-num-to-date (inc (:daynum last-occ))))))))))
 
 (defn merges-by
   "Merge sorted sequences, removing duplicates."
@@ -1169,7 +1176,9 @@
         opt-month (optimize-month-recs (:month grouped-recs))
         opt-year (optimize-year-recs (:year grouped-recs))]
     (assoc event
-      :recur-pats (into [] (concat opt-day opt-week opt-month opt-year)))))
+      :recur-pats (into []
+                        (keep adjust-recur-bounds
+                              (concat opt-day opt-week opt-month opt-year))))))
 
 (defn optimize-event
   "Same as optimize-event-once, but with a check that the function is idempotent."
