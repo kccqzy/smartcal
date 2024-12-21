@@ -1351,6 +1351,33 @@
                                     (format-future-occurrences % start until))
                            recur-pats)))))
 
+(defn fill-in-missing-fields-from-recur-pat
+  "The user is allowed to omit the recur-start, recur-end, as well as
+  for :week/:month/:year the selection of days. We default to characteristics
+  from today."
+  [res today-val]
+  (let [res (transient res)
+        res (if (contains? res :recur-start)
+              res
+              (assoc! res :recur-start today-val))
+        start (:recur-start res)
+        res (case (:recur-type res)
+              :day res
+              :week
+                (if (contains? res :dow) res (assoc! res :dow #{(:dow start)}))
+              :month (if (contains? res :day-selection)
+                       res
+                       (-> res
+                           (assoc! :day-selection :d)
+                           (assoc! :d #{(:d start)})))
+              :year (if (contains? res :day-selection)
+                      res
+                      (-> res
+                          (assoc! :day-selection :md)
+                          (assoc! :d (:d start))
+                          (assoc! :m (:m start)))))]
+    (persistent! res)))
+
 (defn format-str-exprs
   [str-exprs]
   (cstr/join ", "
@@ -1750,16 +1777,16 @@
    recur-day-freq = <'every'> ((<ws> int-lit <ws> | <ws? '(' ws?> int-expr <ws? ')' ws?>) <'days'> | <ws 'day'>)
    recur-week
      = <'every' ws> dow-lit-plus
-     | recur-week-freq <ws 'on' ws> dow-lit-plus
+     | recur-week-freq (<ws 'on' ws> dow-lit-plus)?
    recur-week-freq = <'every'> ((<ws> int-lit <ws> | <ws? '(' ws?> int-expr <ws? ')' ws?>) <'weeks'> | <ws 'week'>)
    recur-month
-    = recur-month-freq <ws 'on' ws ('the' ws)?> recur-month-type
+    = recur-month-freq (<ws 'on' ws ('the' ws)?> recur-month-type)?
     | <'every' ws> recur-month-type <ws 'of' ws ('the' | 'each') ws 'month'>
    <recur-month-type> = recur-month-by-d | recur-month-by-dow
    recur-month-by-d = d-lit-plus
    recur-month-by-dow = occurrence-ordinal-plus <ws> dow-lit
    recur-month-freq = <'every'> ((<ws> int-lit <ws> | <ws? '(' ws?> int-expr <ws? ')' ws?>) <'months'> | <ws 'month'>)
-   recur-year = recur-year-freq <ws 'on' ws> recur-year-type
+   recur-year = recur-year-freq (<ws 'on' ws> recur-year-type)?
    <recur-year-type> = recur-year-by-md | recur-year-by-occ-dow-month
    recur-year-by-md = md-lit
    recur-year-by-occ-dow-month = <('the' ws)?> occurrence-ordinal-plus <ws> dow-lit <ws 'of' ws> month-lit-plus
@@ -1866,7 +1893,9 @@
      :occurrence-ordinal-plus (fn [& ms] {:occ (into #{} (map :occ ms))}),
      :str-glob-fun (fn [pat] {:str-glob-fun pat}),
      :recurring (fn [b & a]
-                  {:recurring (merge {:recur-start today-val} (into b a))}),
+                  {:recurring (fill-in-missing-fields-from-recur-pat
+                                (into b a)
+                                today-val)}),
      :single-occ (fn [d] {:single-occ d}),
      :add-cmd (fn [name date-spec]
                 [:add-cmd

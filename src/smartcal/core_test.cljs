@@ -266,6 +266,23 @@
                                       :freq 1,
                                       :dow #{1 3 5},
                                       :recur-start unit-test-today})]]]))
+  (is (= (parses "add \"x\" every week")
+         [[:cmd
+           [:add-cmd
+            (c/event-from-single-rec "x"
+                                     {:recur-type :week,
+                                      :freq 1,
+                                      :dow #{(:dow unit-test-today)},
+                                      :recur-start unit-test-today})]]]))
+  (is (= (parses "add \"x\" every week from 20250101")
+         [[:cmd
+           [:add-cmd
+            (c/event-from-single-rec "x"
+                                     {:recur-type :week,
+                                      :freq 1,
+                                      :dow #{(:dow (c/ymd-to-date 2025 0 1))},
+                                      :recur-start
+                                        (c/ymd-to-date 2025 0 1)})]]]))
   (is (= (parses "add \"x\" every week on Monday, Wednesday Friday") [])
       "cannot mix comma-separated and space-separated values")
   (is (= (parses "add \"x\" every Monday, Friday")
@@ -320,6 +337,25 @@
                                       :day-selection :d,
                                       :d #{18 22},
                                       :recur-start unit-test-today})]]]))
+  (is (= (parses "add \"x\" every month")
+         [[:cmd
+           [:add-cmd
+            (c/event-from-single-rec "x"
+                                     {:recur-type :month,
+                                      :freq 1,
+                                      :day-selection :d,
+                                      :d #{(:d unit-test-today)},
+                                      :recur-start unit-test-today})]]]))
+  (is (= (parses "add \"x\" every month from 20250131")
+         [[:cmd
+           [:add-cmd
+            (c/event-from-single-rec "x"
+                                     {:recur-type :month,
+                                      :freq 1,
+                                      :day-selection :d,
+                                      :d #{31},
+                                      :recur-start
+                                        (c/ymd-to-date 2025 0 31)})]]]))
   (is (= (parses "add \"x\" every 2 months on the 18th")
          [[:cmd
            [:add-cmd
@@ -427,6 +463,27 @@
                                       :m 11,
                                       :d 26,
                                       :recur-start unit-test-today})]]]))
+  (is (= (parses "add \"x\" every year")
+         [[:cmd
+           [:add-cmd
+            (c/event-from-single-rec "x"
+                                     {:recur-type :year,
+                                      :freq 1,
+                                      :day-selection :md,
+                                      :m (:m unit-test-today),
+                                      :d (:d unit-test-today),
+                                      :recur-start unit-test-today})]]]))
+  (is (= (parses "add \"x\" every year from 20250208")
+         [[:cmd
+           [:add-cmd
+            (c/event-from-single-rec "x"
+                                     {:recur-type :year,
+                                      :freq 1,
+                                      :day-selection :md,
+                                      :m 1,
+                                      :d 8,
+                                      :recur-start
+                                        (c/ymd-to-date 2025 1 8)})]]]))
   (is (= (parses "add \"x\" every 2 years on 26 Dec")
          [[:cmd
            [:add-cmd
@@ -1733,10 +1790,6 @@
   (is (= (parse-and-find-completion "add \"x\" every 3 days") nil))
   (is (= (parse-and-find-completion "add \"x\" every 3 da")
          "add \"x\" every 3 days"))
-  (is (= (parse-and-find-completion "add \"x\" every 3 years")
-         "add \"x\" every 3 years "))
-  (is (= (parse-and-find-completion "add \"x\" every 3 years ")
-         "add \"x\" every 3 years on"))
   (is (= (parse-and-find-completion "add \"x\" every 3 years o")
          "add \"x\" every 3 years on"))
   (is (= (parse-and-find-completion "add \"x\" every 3 years on")
