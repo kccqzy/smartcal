@@ -129,21 +129,35 @@
   (is (empty? (c/all-nd-weekdays-of-month #{-6} 2 9 2024))
       "negative occurrence out of bounds"))
 
-(deftest load-state
-  (is (= (c/load-state {}) {}))
-  (is (= (c/load-state {:weeks-to-show 1}) {:weeks-to-show 1}))
-  (is (= (c/load-state {:weeks-to-show -1}) {}))
-  (is (= (c/load-state {:weeks-to-show 2, :start-date nil}) {:weeks-to-show 2}))
-  (is (= (c/load-state {:weeks-to-show 2, :start-date {:xx 8}})
+(deftest sanitize-loaded-ui-prefs
+  (is (= (c/sanitize-loaded-ui-prefs {}) {}))
+  (is (= (c/sanitize-loaded-ui-prefs {:weeks-to-show 1}) {:weeks-to-show 1}))
+  (is (= (c/sanitize-loaded-ui-prefs {:weeks-to-show -1}) {}))
+  (is (= (c/sanitize-loaded-ui-prefs {:weeks-to-show 2, :start-date nil})
          {:weeks-to-show 2}))
-  (is (= (c/load-state {:weeks-to-show 2, :start-date {:y 1999}})
+  (is (= (c/sanitize-loaded-ui-prefs {:weeks-to-show 2, :start-date {:xx 8}})
          {:weeks-to-show 2}))
-  (is (= (c/load-state {:weeks-to-show 2, :start-date {:y 1999, :m 9, :d 9}})
+  (is (= (c/sanitize-loaded-ui-prefs {:weeks-to-show 2, :start-date {:y 1999}})
+         {:weeks-to-show 2}))
+  (is (= (c/sanitize-loaded-ui-prefs {:weeks-to-show 2,
+                                      :start-date {:y 1999, :m 9, :d 9}})
          {:weeks-to-show 2, :start-date (c/ymd-to-date 1999 9 9)}))
-  (is (= (c/load-state {:weeks-to-show 2, :start-date {:y 1, :m 1, :d 1}})
+  (is (= (c/sanitize-loaded-ui-prefs {:weeks-to-show 2,
+                                      :start-date {:y 1, :m 1, :d 1}})
          {:weeks-to-show 2}))
-  (is (= (c/load-state {:weeks-to-show 2, :start-date {:y 1999, :m 12, :d 1}})
-         {:weeks-to-show 2})))
+  (is (= (c/sanitize-loaded-ui-prefs {:weeks-to-show 2,
+                                      :start-date {:y 1999, :m 12, :d 1}})
+         {:weeks-to-show 2}))
+  (is (= (c/sanitize-loaded-ui-prefs {:weeks-to-show 2,
+                                      :start-date {:y 1999, :m 11, :d 1},
+                                      :optimize-events false})
+         {:weeks-to-show 2,
+          :start-date (c/ymd-to-date 1999 11 1),
+          :optimize-events false}))
+  (is (= (c/sanitize-loaded-ui-prefs {:weeks-to-show 2,
+                                      :start-date {:y 1999, :m 11, :d 1},
+                                      :optimize-events "0"})
+         {:weeks-to-show 2, :start-date (c/ymd-to-date 1999 11 1)})))
 
 (def unit-test-today (c/ymd-to-date 2024 11 1))
 

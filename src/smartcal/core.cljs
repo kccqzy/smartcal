@@ -1,5 +1,6 @@
 (ns smartcal.core
-  (:require [shadow.grove :as sg :refer (<< defc dev-log)]
+  (:import goog.storage.mechanism.HTML5LocalStorage)
+  (:require [shadow.grove :as sg :refer (<< defc)]
             [shadow.grove.kv :as kv]
             [instaparse.core :as insta :refer [defparser]]
             [cljs.core.match :refer [match]]
@@ -1614,7 +1615,7 @@
 (defonce rt-ref (sg/get-runtime :app))
 
 (defn init-ui-state!
-  []
+  [reloaded-ui-prefs]
   (sg/add-kv-table rt-ref
                    :ui
                    {}
@@ -1640,9 +1641,10 @@
                            ;; (technically a CSS transition) to dismiss the
                            ;; modal. The user won't have to see a flash of
                            ;; the empty modal.
-                           :modal-shown false})))
+                           :modal-shown false}
+                          reloaded-ui-prefs)))
 
-(def app-state-validators
+(def ui-prefs-validators
   {:weeks-to-show #(and (integer? %) (>= % 1) (<= % 60)),
    :start-date #(and (map? %)
                      (:y %)
@@ -1653,7 +1655,27 @@
                      (>= (:m %) 0)
                      (< (:m %) 12)
                      (>= (:d %) 1)
-                     (<= (:d %) 31))})
+                     (<= (:d %) 31)),
+   :optimize-events boolean?,
+   :autocomplete boolean?,
+   :explain-cmd boolean?,
+   :alt-color boolean?})
+
+(defonce local-storage (HTML5LocalStorage.))
+
+(defn save-ui-prefs
+  [{:keys [ui]}]
+  (when (.isAvailable local-storage)
+    (let [ui (select-keys ui (keys ui-prefs-validators))
+          ui (update ui :start-date #(select-keys % [:y :m :d]))
+          ser (js/JSON.stringify (clj->js ui))]
+      (try (.set local-storage "prefs" ser)
+           (catch :default e
+             (js/console.log "Saving to localStorage failed:" e))))))
+
+(defn save-ui-prefs-after-sg-tx
+  [env]
+  (sg/queue-after-interceptor env #(doto % (save-ui-prefs))))
 
 (sg/reg-event :app
               :modify-ui-prefs
@@ -1661,30 +1683,29 @@
                 {:pre [(keyword? key)]}
                 (when VERBOSE
                   (js/console.log "Changing setting" (name key) "to" value))
-                (assoc-in env [:ui key] value)))
+                (-> env
+                    (assoc-in [:ui key] value)
+                    (save-ui-prefs-after-sg-tx))))
 
-(defn save-state
-  [app-state]
-  (update app-state :start-date #(select-keys % [:y :m :d])))
-
-(defn load-state
+(defn sanitize-loaded-ui-prefs
   [reloaded-edn]
   (let [r (into {}
-                (filter #(if-let [validator (get app-state-validators
-                                                 (first %))]
+                (filter #(if-let [validator (get ui-prefs-validators (first %))]
                            (validator (second %))
                            false)
                   reloaded-edn))]
     (if (:start-date r) (update r :start-date ymd-map-to-date) r)))
 
-(defn reload-from-local-storage
+(defn load-ui-prefs-from-local-storage
   []
-  (try (load-state (js->clj (js/JSON.parse (.getItem js/window.localStorage
-                                                     "appstate"))
-                            :keywordize-keys
-                            true))
-       (catch :default e
-         (do (dev-log "Reloading from localStorage failed" e) {}))))
+  (if (.isAvailable local-storage)
+    (try (sanitize-loaded-ui-prefs (js->clj (js/JSON.parse (.get local-storage
+                                                                 "prefs"))
+                                            :keywordize-keys
+                                            true))
+         (catch :default e
+           (do (js/console.log "Reloading from localStorage failed:" e) {})))
+    {}))
 
 (defn show-modal
   [env content]
@@ -2257,11 +2278,16 @@
         (if (insta/failure? parsed)
           (show-message env (pr-str parsed))
           (match (fnext parsed)
-            [:next-cmd] (update-in env [:ui :start-date] next-week)
-            [:next-cmd n] (update-in env [:ui :start-date] #(next-week n %))
-            [:prev-cmd] (update-in env [:ui :start-date] prev-week)
-            [:prev-cmd n] (update-in env [:ui :start-date] #(prev-week n %))
-            [:goto-cmd ymd] (assoc-in env [:ui :start-date] ymd)
+            [:next-cmd] (save-ui-prefs-after-sg-tx
+                          (update-in env [:ui :start-date] next-week))
+            [:next-cmd n] (save-ui-prefs-after-sg-tx
+                            (update-in env [:ui :start-date] #(next-week n %)))
+            [:prev-cmd] (save-ui-prefs-after-sg-tx
+                          (update-in env [:ui :start-date] prev-week))
+            [:prev-cmd n] (save-ui-prefs-after-sg-tx
+                            (update-in env [:ui :start-date] #(prev-week n %)))
+            [:goto-cmd ymd] (save-ui-prefs-after-sg-tx
+                              (assoc-in env [:ui :start-date] ymd))
             [:add-cmd event] (add-event-to-env env event)
             [:rm-cmd name] (let [old-count (count (:events env))
                                  new-env (update env :events dissoc name)
@@ -2506,6 +2532,10 @@
   []
   (sg/render rt-ref (.getElementById js/document "app") (calendar-component)))
 
-(defn init! [] (init-ui-state!) (init-events-state!) (render!))
+(defn init!
+  []
+  (init-ui-state! (load-ui-prefs-from-local-storage))
+  (init-events-state!)
+  (render!))
 
 (defn ^:dev/after-load reload! [] (render!))
