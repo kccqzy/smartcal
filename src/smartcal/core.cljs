@@ -3,7 +3,6 @@
   (:require [shadow.grove :as sg :refer (<< defc)]
             [shadow.grove.kv :as kv]
             [instaparse.core :as insta :refer [defparser]]
-            [cljs.core.match :refer [match]]
             [clojure.string :as cstr]
             [clojure.set :as cset]
             [goog.string :as gstr]))
@@ -204,11 +203,9 @@
   [start-date]
   (day-num-to-date (- (:daynum start-date) (:dow start-date))))
 
-(defn next-week
-  ([ymd] (next-week 1 ymd))
-  ([n ymd] (day-num-to-date (+ (:daynum ymd) (* n 7)))))
+(defn next-week [n ymd] (day-num-to-date (+ (:daynum ymd) (* n 7))))
 
-(defn prev-week ([ymd] (next-week -1 ymd)) ([n ymd] (next-week (- n) ymd)))
+(defn prev-week [n ymd] (next-week (- n) ymd))
 
 (defn modulo-remainder-seq
   "Returns a sequence of integers in a range where it is congruent to a specified
@@ -2008,7 +2005,11 @@
   (event :event-click
          [env {:keys [name]} e]
          (do (.stopPropagation e)
-             (sg/run-tx env {:e :show-modal, :content [:ls-only #{name}]}))))
+             (sg/run-tx env
+                        {:e :show-modal,
+                         :content {:component :ls,
+                                   :ls-style :ls-only,
+                                   :selected #{name}}}))))
 
 (def cmdline-prompt ">>> ")
 
@@ -2277,40 +2278,50 @@
         (when VERBOSE (js/console.log "Currently parsed:" (pr-str parsed)))
         (if (insta/failure? parsed)
           (show-message env (pr-str parsed))
-          (match (fnext parsed)
-            [:next-cmd] (save-ui-prefs-after-sg-tx
-                          (update-in env [:ui :start-date] next-week))
-            [:next-cmd n] (save-ui-prefs-after-sg-tx
-                            (update-in env [:ui :start-date] #(next-week n %)))
-            [:prev-cmd] (save-ui-prefs-after-sg-tx
-                          (update-in env [:ui :start-date] prev-week))
-            [:prev-cmd n] (save-ui-prefs-after-sg-tx
-                            (update-in env [:ui :start-date] #(prev-week n %)))
-            [:goto-cmd ymd] (save-ui-prefs-after-sg-tx
-                              (assoc-in env [:ui :start-date] ymd))
-            [:add-cmd event] (add-event-to-env env event)
-            [:rm-cmd name] (let [old-count (count (:events env))
-                                 new-env (update env :events dissoc name)
-                                 new-count (count (:events new-env))
-                                 removals (- old-count new-count)]
-                             (show-message new-env
-                                           (str "Removed "
-                                                (if (== 1 removals)
-                                                  "one event."
-                                                  (str removals " events.")))))
-            [:help-cmd] (show-modal env :help)
-            [:config-cmd] (show-modal env :config)
-            [:ls-cmd] (show-modal env :ls-visible)
-            [:ls-cmd [t]] (show-modal env t)
-            [:ls-cmd [:ls-only & exprs]]
-              (let [selected-events
-                      (eval-str-exprs exprs (map :evname (vals (:events env))))]
-                (if (empty? selected-events)
-                  (show-message
-                    env
-                    "No events selected for display in \"ls only\" command.")
-                  (show-modal env [:ls-only selected-events])))
-            :else (show-message env (str "TODO: " (pr-str parsed)))))))
+          (let [cmd (get parsed 1)
+                arg (get cmd 1)]
+            (case (first cmd)
+              :next-cmd
+                (save-ui-prefs-after-sg-tx
+                  (update-in env [:ui :start-date] #(next-week (or arg 1) %)))
+              :prev-cmd
+                (save-ui-prefs-after-sg-tx
+                  (update-in env [:ui :start-date] #(prev-week (or arg 1) %)))
+              :goto-cmd (save-ui-prefs-after-sg-tx
+                          (assoc-in env [:ui :start-date] arg))
+              :add-cmd (add-event-to-env env arg)
+              :rm-cmd (let [old-count (count (:events env))
+                            new-env (update env :events dissoc arg)
+                            new-count (count (:events new-env))
+                            removals (- old-count new-count)]
+                        (show-message new-env
+                                      (str "Removed "
+                                           (if (== 1 removals)
+                                             "one event."
+                                             (str removals " events.")))))
+              :help-cmd (show-modal env {:component :help})
+              :config-cmd (show-modal env {:component :config})
+              :ls-cmd
+                (if (nil? arg)
+                  (show-modal env {:component :ls, :ls-style :ls-visible})
+                  (case (first arg)
+                    :ls-all (show-modal env {:component :ls, :ls-style :ls-all})
+                    :ls-visible
+                      (show-modal env {:component :ls, :ls-style :ls-visible})
+                    :ls-only
+                      (let [selected-events (eval-str-exprs (next arg)
+                                                            (map :evname
+                                                              (vals (:events
+                                                                      env))))]
+                        (if (empty? selected-events)
+                          (show-message
+                            env
+                            "No events selected for display in \"ls only\" command.")
+                          (show-modal env
+                                      {:component :ls,
+                                       :ls-style :ls-only,
+                                       :selected selected-events})))))
+              (show-message env (str "TODO: " (pr-str parsed))))))))
     (catch :default e
       (show-message env
                     (if (and (map? e) (:date-outside-range e))
@@ -2332,22 +2343,28 @@
   (bind parsed (transform-parsed (cmdline-parser input)))
   (render
     (if-not (insta/failure? parsed)
-      (match (fnext parsed)
-        [:next-cmd] "Scroll down by one week"
-        [:next-cmd n] (str "Scroll down by " n " weeks")
-        [:prev-cmd] "Scroll up by one week"
-        [:prev-cmd n] (str "Scroll up by " n " weeks")
-        [:goto-cmd date] (str "Go to date " (format-date-en-us date))
-        [:add-cmd event] (str "Add " (format-event event start until))
-        [:rm-cmd name] (str "Remove events named \"" name "\"")
-        [:ls-cmd] "List events visible in the current view"
-        [:ls-cmd [:ls-all]] "List all events"
-        [:ls-cmd [:ls-visible]] "List events visible in the current view"
-        [:ls-cmd [:ls-only & exprs]] (str "List events that are "
-                                          (format-str-exprs exprs))
-        [:help-cmd] "Show help"
-        [:config-cmd] "Configure calendar display"
-        :else (pr-str parsed)))))
+      (let [cmd (get parsed 1)
+            arg (get cmd 1)]
+        (case (first cmd)
+          :next-cmd (if (nil? arg)
+                      "Scroll down by one week"
+                      (str "Scroll down by " arg " weeks"))
+          :prev-cmd (if (nil? arg)
+                      "Scroll up by one week"
+                      (str "Scroll up by " arg " weeks"))
+          :goto-cmd (str "Go to date " (format-date-en-us arg))
+          :add-cmd (str "Add " (format-event arg start until))
+          :rm-cmd (str "Remove events named \"" arg "\"")
+          :ls-cmd (if (nil? arg)
+                    "List events visible in the current view"
+                    (case (first arg)
+                      :ls-all "List all events"
+                      :ls-visible "List events visible in the current view"
+                      :ls-only (str "List events that are "
+                                    (format-str-exprs (next arg)))))
+          :help-cmd "Show help"
+          :config-cmd "Configure calendar display"
+          (pr-str parsed))))))
 
 (defn cmdline-input-changed
   [env {:keys [processed-input]}]
@@ -2493,13 +2510,16 @@
   (bind modal-shown (sg/kv-lookup :ui :modal-shown))
   (bind modal-class (if modal-shown "" "hidden"))
   (render (<< [:div#modal {:class modal-class}
-               (match modal-content
+               (case (:component modal-content)
                  nil nil
                  :help (help-modal-component)
                  :config (config-modal-component)
-                 :ls-visible (ls-modal-component false nil)
-                 :ls-all (ls-modal-component true nil)
-                 [:ls-only selected] (ls-modal-component true selected))])))
+                 :ls (case (:ls-style modal-content)
+                       :ls-visible (ls-modal-component false nil)
+                       :ls-all (ls-modal-component true nil)
+                       :ls-only (ls-modal-component true
+                                                    (:selected
+                                                      modal-content))))])))
 
 (defc calendar-component
   []
