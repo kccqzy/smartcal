@@ -1770,11 +1770,12 @@
 
 (defparser
   cmdline-parser
-  "cmd = <ws?> (help-cmd | add-cmd | ls-cmd | rm-cmd | next-cmd | prev-cmd | goto-cmd | config-cmd) <ws?>
+  "cmd = <ws?> (help-cmd | add-cmd | ls-cmd | rm-cmd | rename-cmd | next-cmd | prev-cmd | goto-cmd | config-cmd) <ws?>
    <ws> = #' +'
    help-cmd = <'help'>
    config-cmd = <'config' | 'settings' | 'prefs'>
    add-cmd = <'add' (ws 'event')? ws> str-lit <ws> (single-occ | recurring)
+   rename-cmd = <'rename' (ws 'event')? ws> str-lit <ws ('to' ws)?> str-lit
    ls-cmd = <'ls' | 'list'> (ls-all | ls-visible? | ls-only)
    ls-all = <ws 'all'>
    ls-visible = <ws 'visible'>
@@ -2115,7 +2116,15 @@
          " symbol represents any character; the " [:strong "*"]
          " symbol represents zero or more characters. (Because discussions of characters are fraught with subtlety, here character simply refers to a Unicode code point.) So "
          [:code "ls only glob(\"*Day\") \"X\""] " displays events ending with "
-         [:em "Day"] " and also those named " [:em "X"] "."]]])))
+         [:em "Day"] " and also those named " [:em "X"] "."]]
+       [:details {:open true} [:summary "Modifying events"]
+        [:p "The " [:code "rename"]
+         " command can be used to change the name of events. The "
+         [:code "rename event \"x\" to \"y\""]
+         " command renames the event named " [:em "x"] " to " [:em "y"]
+         "; in case that is too much syntax, it can also be written "
+         [:code "rename \"x\" \"y\""]
+         ". If the new name of an event coincides with an existing event, it is replaced."]]])))
 
 (defc ls-modal-component
   [show-invisible selected-or-nil]
@@ -2299,6 +2308,17 @@
                                            (if (== 1 removals)
                                              "one event."
                                              (str removals " events.")))))
+              :rename-cmd
+                (let [new-name (get cmd 2)
+                      old-event (get (:events env) arg)]
+                  (if (nil? old-event)
+                    (show-message env "The named event does not exist.")
+                    (update env
+                            :events
+                            #(-> %
+                                 (dissoc arg)
+                                 (assoc new-name (assoc old-event
+                                                   :evname new-name))))))
               :help-cmd (show-modal env {:component :help})
               :config-cmd (show-modal env {:component :config})
               :ls-cmd
@@ -2355,6 +2375,9 @@
           :goto-cmd (str "Go to date " (format-date-en-us arg))
           :add-cmd (str "Add " (format-event arg start until))
           :rm-cmd (str "Remove events named \"" arg "\"")
+          :rename-cmd
+            (let [new-name (get cmd 2)]
+              (str "Rename the event named \"" arg "\" into \"" new-name "\""))
           :ls-cmd (if (nil? arg)
                     "List events visible in the current view"
                     (case (first arg)

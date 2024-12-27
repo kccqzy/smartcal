@@ -651,7 +651,11 @@
   (is (= (parses "add \"x\" on plus(Dec 1, 2024, 10y)")
          [[:cmd
            [:add-cmd
-            (c/event-from-single-occ "x" (c/ymd-to-date 2034 11 1))]]])))
+            (c/event-from-single-occ "x" (c/ymd-to-date 2034 11 1))]]]))
+  (is (= (parses "rename event \"x\" to \"y\"") [[:cmd [:rename-cmd "x" "y"]]]))
+  (is (= (parses "rename \"x\" \"y\"") [[:cmd [:rename-cmd "x" "y"]]]))
+  (is (= (parses "rename event \"x\" \"y\"") [[:cmd [:rename-cmd "x" "y"]]]))
+  (is (= (parses "rename \"x\" to \"y\"") [[:cmd [:rename-cmd "x" "y"]]])))
 
 (deftest recurrent-event-occurrences
   (is (= (c/recurrent-event-occurrences
