@@ -168,6 +168,10 @@
                                            today)))
 
 (deftest control-language
+  (is (= (parses "") []))
+  (is (= (parses "  ") []))
+  (is (insta/failure? (c/cmdline-parser "" :total true :unhide :all)))
+  (is (insta/failure? (c/cmdline-parser "  " :total true :unhide :all)))
   (is (= (parses "goto 20241001")
          [[:cmd [:goto-cmd (c/ymd-to-date 2024 9 1)]]]))
   (is (= (parses "goto 2024-10-01")

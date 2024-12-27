@@ -1879,9 +1879,9 @@
      :month-interval-fun #(array-map :m %),
      :year-interval-fun #(array-map :y %),
      :date-plus-fun (fn [date interval]
-                      (ymd-map-to-date-checked (merge-with + date interval))),
+                      (ymd-map-to-date (merge-with + date interval))),
      :date-minus-fun (fn [date interval]
-                       (ymd-map-to-date-checked (merge-with - date interval))),
+                       (ymd-map-to-date (merge-with - date interval))),
      :date-today-fun (fn [] today-val),
      :yyyy-lit (comp #(assoc nil :y %) #(js/parseInt % 10)),
      :mm-lit (comp #(assoc nil :m %) dec #(js/parseInt % 10)),
@@ -2279,88 +2279,91 @@
                      :value (.. e -target -checked)})))
 
 (defn execute-input-impl
+  [env input given-parsed]
+  ;; This function can execute the input either as a string or an already
+  ;; parsed structure.
+  {:pre [(string? input)]}
+  (let [parsed (or given-parsed (transform-parsed (cmdline-parser input)))]
+    (when VERBOSE (js/console.log "Currently parsed:" (pr-str parsed)))
+    (if (insta/failure? parsed)
+      (show-message env (pr-str parsed))
+      (let [cmd (get parsed 1)
+            arg (get cmd 1)]
+        (case (first cmd)
+          :next-cmd
+            (save-ui-prefs-after-sg-tx
+              (update-in env [:ui :start-date] #(next-week (or arg 1) %)))
+          :prev-cmd
+            (save-ui-prefs-after-sg-tx
+              (update-in env [:ui :start-date] #(prev-week (or arg 1) %)))
+          :goto-cmd (save-ui-prefs-after-sg-tx
+                      (assoc-in env [:ui :start-date] arg))
+          :add-cmd (add-event-to-env env arg)
+          :rm-cmd (let [old-count (count (:events env))
+                        new-env (update env :events dissoc arg)
+                        new-count (count (:events new-env))
+                        removals (- old-count new-count)]
+                    (show-message new-env
+                                  (str "Removed "
+                                       (if (== 1 removals)
+                                         "one event."
+                                         (str removals " events.")))))
+          :rename-cmd (let [new-name (get cmd 2)
+                            old-event (get (:events env) arg)]
+                        (if (nil? old-event)
+                          (show-message env "The named event does not exist.")
+                          (update env
+                                  :events
+                                  #(-> %
+                                       (dissoc arg)
+                                       (assoc new-name (assoc old-event
+                                                         :evname new-name))))))
+          :help-cmd (show-modal env {:component :help})
+          :config-cmd (show-modal env {:component :config})
+          :ls-cmd
+            (if (nil? arg)
+              (show-modal env {:component :ls, :ls-style :ls-visible})
+              (case (first arg)
+                :ls-all (show-modal env {:component :ls, :ls-style :ls-all})
+                :ls-visible (show-modal env
+                                        {:component :ls, :ls-style :ls-visible})
+                :ls-only
+                  (let [selected-events (eval-str-exprs
+                                          (next arg)
+                                          (map :evname (vals (:events env))))]
+                    (if (empty? selected-events)
+                      (show-message
+                        env
+                        "No events selected for display in \"ls only\" command.")
+                      (show-modal env
+                                  {:component :ls,
+                                   :ls-style :ls-only,
+                                   :selected selected-events})))))
+          (show-message env
+                        (str "[TODO] Unimplemented feature: "
+                             (pr-str parsed))))))))
+
+(defn add-input-to-history-if-no-space-prefix
+  "We use the following popular (shell-based?) convention for eliminating addition
+  to the history: the string starts with a space."
   [env input]
-  (try
-    (if (empty? (.trim input))
-      env
-      (let [parsed (transform-parsed (cmdline-parser input))]
-        (when VERBOSE (js/console.log "Currently parsed:" (pr-str parsed)))
-        (if (insta/failure? parsed)
-          (show-message env (pr-str parsed))
-          (let [cmd (get parsed 1)
-                arg (get cmd 1)]
-            (case (first cmd)
-              :next-cmd
-                (save-ui-prefs-after-sg-tx
-                  (update-in env [:ui :start-date] #(next-week (or arg 1) %)))
-              :prev-cmd
-                (save-ui-prefs-after-sg-tx
-                  (update-in env [:ui :start-date] #(prev-week (or arg 1) %)))
-              :goto-cmd (save-ui-prefs-after-sg-tx
-                          (assoc-in env [:ui :start-date] arg))
-              :add-cmd (add-event-to-env env arg)
-              :rm-cmd (let [old-count (count (:events env))
-                            new-env (update env :events dissoc arg)
-                            new-count (count (:events new-env))
-                            removals (- old-count new-count)]
-                        (show-message new-env
-                                      (str "Removed "
-                                           (if (== 1 removals)
-                                             "one event."
-                                             (str removals " events.")))))
-              :rename-cmd
-                (let [new-name (get cmd 2)
-                      old-event (get (:events env) arg)]
-                  (if (nil? old-event)
-                    (show-message env "The named event does not exist.")
-                    (update env
-                            :events
-                            #(-> %
-                                 (dissoc arg)
-                                 (assoc new-name (assoc old-event
-                                                   :evname new-name))))))
-              :help-cmd (show-modal env {:component :help})
-              :config-cmd (show-modal env {:component :config})
-              :ls-cmd
-                (if (nil? arg)
-                  (show-modal env {:component :ls, :ls-style :ls-visible})
-                  (case (first arg)
-                    :ls-all (show-modal env {:component :ls, :ls-style :ls-all})
-                    :ls-visible
-                      (show-modal env {:component :ls, :ls-style :ls-visible})
-                    :ls-only
-                      (let [selected-events (eval-str-exprs (next arg)
-                                                            (map :evname
-                                                              (vals (:events
-                                                                      env))))]
-                        (if (empty? selected-events)
-                          (show-message
-                            env
-                            "No events selected for display in \"ls only\" command.")
-                          (show-modal env
-                                      {:component :ls,
-                                       :ls-style :ls-only,
-                                       :selected selected-events})))))
-              (show-message env (str "TODO: " (pr-str parsed))))))))
-    (catch :default e
-      (show-message env
-                    (if (and (map? e) (:date-outside-range e))
-                      "The specified date is outside the supported range."
-                      (do (js/console.log e) "An unknown error occurred."))))))
+  (if (.startsWith input " ") env (update env :ui history-add input)))
 
 (defn execute-input
-  [env {:keys [input]}]
-  (-> env
-      (assoc-in [:ui :cmdline-output] "")
-      (assoc-in [:ui :cmdline-input] "")
-      (hide-modal nil)
-      (update :ui history-add input)
-      (execute-input-impl input)))
+  [env {:keys [input parsed]}]
+  (let [env (-> env
+                (assoc-in [:ui :cmdline-output] "")
+                (assoc-in [:ui :cmdline-input] "")
+                (hide-modal nil))]
+    (if (identical? "" (.trim input))
+      env
+      (execute-input-impl (add-input-to-history-if-no-space-prefix env input)
+                          input
+                          parsed))))
 (sg/reg-event :app :execute-input execute-input)
 
 (defc explain-input-component
-  [input start until]
-  (bind parsed (transform-parsed (cmdline-parser input)))
+  [parsed start until]
   (render
     (if-not (insta/failure? parsed)
       (let [cmd (get parsed 1)
@@ -2400,6 +2403,10 @@
   (bind ^boolean should-autocomplete (sg/kv-lookup :ui :autocomplete))
   (bind ^boolean should-explain (sg/kv-lookup :ui :explain-cmd))
   (bind parsed (cmdline-parser input :total true :unhide :all))
+  (bind normal-parsed
+        (if (insta/failure? parsed)
+          (insta/get-failure parsed)
+          (transform-parsed (cmdline-parser input))))
   (bind possible-completion
         (if should-autocomplete
           (if (insta/failure? parsed)
@@ -2436,7 +2443,9 @@
                     (.substring possible-completion (.-length input)))
                   (if should-explain
                     (<< " # "
-                        (explain-input-component input start until))))]))]]]))
+                        (explain-input-component normal-parsed
+                                                 start
+                                                 until))))]))]]]))
   (event :textarea-change
          [env _ e]
          ;; We do not support tab characters for now. The
@@ -2455,6 +2464,9 @@
              ;; The user keeps the prompt and appends to it. Happy case.
              (.startsWith val cmdline-prompt)
              (let [input (.substring val cmdline-prompt-length)]
+               ;; There really should not be \n in the string because we
+               ;; have taken care of processing the Enter key. In case that
+               ;; somehow fails, we check again here.
                (if (> (.indexOf input "\n") -1)
                  ;; In Grove, controlled components behave differently from
                  ;; React. We need to manually set the DOM value. This is
@@ -2494,32 +2506,37 @@
            (when-not (and (== start correct-start) (== end correct-end))
              (.setSelectionRange (.-target e) correct-start correct-end)))
          env)
-  (event :textarea-keydown
-         [env _ e]
-         (when-not (let [^boolean composing (.-isComposing e)]
-                     (or composing (== 229 (.-keyCode e))))
-           (case (.-code e)
-             "ArrowUp" (do (.preventDefault e)
-                           (.stopPropagation e)
-                           (sg/run-tx env {:e :cmdline-arrow-up}))
-             "ArrowDown" (do (.preventDefault e)
-                             (.stopPropagation e)
-                             (sg/run-tx env {:e :cmdline-arrow-down}))
-             "ArrowRight" (when (== (-> e
-                                        .-target
-                                        .-selectionStart)
-                                    (-> e
-                                        .-target
-                                        .-selectionEnd)
-                                    (+ cmdline-prompt-length (.-length input)))
-                            (.preventDefault e)
-                            (.stopPropagation e)
-                            (sg/run-tx env
-                                       {:e :cmdline-arrow-right,
-                                        :current-completion
-                                          possible-completion}))
-             "ArrowLeft" nil
-             (sg/run-tx env {:e :cmdline-history-finish})))))
+  (event
+    :textarea-keydown
+    [env _ e]
+    (when-not (let [^boolean composing (.-isComposing e)]
+                (or composing (== 229 (.-keyCode e))))
+      (case (.-code e)
+        "Enter" (do (.preventDefault e)
+                    (.stopPropagation e)
+                    (sg/run-tx
+                      env
+                      {:e :execute-input, :input input, :parsed normal-parsed}))
+        "ArrowUp" (do (.preventDefault e)
+                      (.stopPropagation e)
+                      (sg/run-tx env {:e :cmdline-arrow-up}))
+        "ArrowDown" (do (.preventDefault e)
+                        (.stopPropagation e)
+                        (sg/run-tx env {:e :cmdline-arrow-down}))
+        "ArrowRight" (when (== (-> e
+                                   .-target
+                                   .-selectionStart)
+                               (-> e
+                                   .-target
+                                   .-selectionEnd)
+                               (+ cmdline-prompt-length (.-length input)))
+                       (.preventDefault e)
+                       (.stopPropagation e)
+                       (sg/run-tx env
+                                  {:e :cmdline-arrow-right,
+                                   :current-completion possible-completion}))
+        "ArrowLeft" nil
+        (sg/run-tx env {:e :cmdline-history-finish})))))
 
 (defc cmdline-output-component
   []
