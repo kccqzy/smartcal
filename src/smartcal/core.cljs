@@ -177,9 +177,13 @@
        (vector? (:recur-pats x))
        (every? map? (:recur-pats x))))
 
-(defn event-from-single-occ [name occ] (Event. name (conj (date-set) occ) []))
+(defn event-from-single-occ
+  [name occ]
+  (Event. (.normalize name "NFC") (conj (date-set) occ) []))
 
-(defn event-from-single-rec [name rec] (Event. name (date-set) [rec]))
+(defn event-from-single-rec
+  [name rec]
+  (Event. (.normalize name "NFC") (date-set) [rec]))
 
 (defn merge-event
   "Merge an existing event (which may be nil) and a new event."
