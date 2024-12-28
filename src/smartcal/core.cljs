@@ -1141,13 +1141,25 @@
        (optimize-recs-generic)
        (map period-to-day-rec)))
 
+(defn split-week-recs-by-dow
+  "Split week recs according to the dow. CAUTION: the type for the :dow field is
+  hereby changed into a single integer rather than a set."
+  [rec]
+  {:pre [(= (:recur-type rec) :week) (set? (:dow rec))
+         (every? integer? (:dow rec))],
+   :post [(every? #(integer? (:dow %)) %)]}
+  (map #(assoc rec :dow %) (:dow rec)))
+
 (defn merge-week-recs
+  "Merge week recurrences, given that they have the same freq, recur-period-start,
+  recur-period-end, recur-period-remainder. CAUTION: the :dow field is expected
+  to be an integer in the input."
   [recs]
   {:pre [(not (empty? recs)) (every? map? recs)
-         (every? #(= (:recur-type %) :week) recs) (apply = (map :freq recs))
-         (apply = (map :recur-period-start recs))
-         (apply = (map :recur-period-end recs))]}
-  (assoc (first recs) :dow (apply cset/union (map :dow recs))))
+         (every? #(= (:recur-type %) :week) recs)
+         (every? integer? (map :dow recs))
+         (apply = (map #(dissoc % :dow) recs))]}
+  (assoc (first recs) :dow (into (hash-set) (map :dow recs))))
 
 (defn optimize-week-recs
   [week-recs]
@@ -1155,12 +1167,15 @@
        (mapcat week-month-rec-to-periods)
        (split-recs-without-overlap)
        (filter rec-period-has-occ)
-       (group-by (juxt :freq :recur-period-remainder :recur-period-start))
-       (vals)
-       (map merge-week-recs)
+       (mapcat split-week-recs-by-dow)
        (group-by :dow)
        (vals)
        (mapcat optimize-recs-generic)
+       (split-recs-without-overlap)
+       (group-by (juxt :freq :recur-period-remainder :recur-period-start))
+       (vals)
+       (map merge-week-recs)
+       (sort-by :recur-period-start)
        (map period-to-week-rec)))
 
 (defn optimize-month-recs [x] x) ;; TODO
